@@ -196,15 +196,18 @@ impl OllamaClient {
         num_ctx: u32,
     ) -> io::Result<()> {
         let create_url = format!("{}/api/create", self.host_root.trim_end_matches('/'));
-        let modelfile = format!(
-            "FROM {base_model}\nPARAMETER temperature {temperature}\nPARAMETER num_ctx {num_ctx}\nSYSTEM \"\"\"You are an offcodex coding agent. Always answer in the user's language. If that language is unsupported or unclear, use English. Never switch languages unexpectedly or mix languages in the same response. Keep code, JSON, command output, and tool-call payloads unchanged. After tool execution, summarize the result in the user's language. Use the provided tools whenever they can complete the task. Prefer native function calls; when textual calls are required, emit only <tool_call>{{\\\"name\\\":<function-name>,\\\"arguments\\\":<args-json-object>}}</tool_call>. Never claim a file or command succeeded without a successful tool result.\"\"\""
-        );
+        let system_prompt = "You are an offcodex coding agent. Always answer in the user's language. If that language is unsupported or unclear, use English. Never switch languages unexpectedly or mix languages in the same response. Keep code, JSON, command output, and tool-call payloads unchanged. After tool execution, summarize the result in the user's language. Use the provided tools whenever they can complete the task. Prefer native function calls; when textual calls are required, emit only <tool_call>{\"name\":<function-name>,\"arguments\":<args-json-object>}</tool_call>. Never claim a file or command succeeded without a successful tool result.";
         let resp = self
             .client
             .post(create_url)
             .json(&serde_json::json!({
                 "model": model,
-                "modelfile": modelfile,
+                "from": base_model,
+                "system": system_prompt,
+                "parameters": {
+                    "temperature": temperature,
+                    "num_ctx": num_ctx,
+                },
                 "stream": false,
             }))
             .send()
@@ -213,9 +216,10 @@ impl OllamaClient {
         if resp.status().is_success() {
             Ok(())
         } else {
+            let status = resp.status();
+            let body = resp.text().await.unwrap_or_default();
             Err(io::Error::other(format!(
-                "Ollama could not create model `{model}`: HTTP {}",
-                resp.status()
+                "Ollama could not create model `{model}`: HTTP {status}: {body}"
             )))
         }
     }
