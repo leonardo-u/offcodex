@@ -63,6 +63,8 @@ Use `/model` to select any model installed in Ollama, and `/auto on` or `/auto o
 
 On the first local startup, offcodex opens the Ollama model picker if no global default has been saved. Selecting an existing `offcodex-*` model saves it as the global default. Selecting another model offers to create a clean `offcodex-*` variant with editable temperature and a context suggestion based on detected NVIDIA VRAM; the large warning in that prompt explains that unsafe values can reduce tool reliability or exhaust VRAM. Choosing session-only keeps the global default unset. Later `/model` changes affect only the current session, and `/reset-model` removes the global default so the startup choice appears again.
 
+Newly created variants also include the local language and tool-use policy in their Ollama `SYSTEM` prompt. Existing variants keep the prompt they were created with until they are recreated.
+
 <details>
 <summary>You can also go to the <a href="https://github.com/leonardo-u/offcodex/releases/latest">latest offcodex GitHub Release</a> and download the appropriate binary for your platform.</summary>
 
@@ -78,6 +80,7 @@ Release assets use the `offcodex-*` naming convention. If you download an archiv
 - Tool calls are validated and malformed JSON is returned to the model with a correction request instead of crashing the session.
 - When `/model` switches an Ollama model, offcodex visibly reads its `/api/show` template and reports the explicit textual tool-call wrapper it declares. Native function calling is still preferred.
 - The textual fallback accepts only explicit template wrappers such as `<tool_call>…</tool_call>`, `<function_call>…</function_call>`, and `<tools>…</tools>`. A bare JSON snippet in normal assistant prose is never executed as a command.
+- Local models are instructed to answer in the user’s language, use English only when the language is unsupported or unclear, and never mix languages unexpectedly. Code, JSON, command output, and tool-call payloads are preserved verbatim.
 - For local models, offcodex exposes a small, reliable baseline of file, patch, terminal, and web tools rather than overwhelming the model with every available integration.
 - Commands still run in the configured sandbox and retain normal approval controls; `/auto off` asks before untrusted mutations, while `/auto on` enables autonomous execution.
 - Cloud-only account and promotion commands are hidden while using Ollama.
