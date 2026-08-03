@@ -75,54 +75,86 @@ pub(crate) fn raw_assistant_output_text_from_item(item: &ResponseItem) -> Option
     None
 }
 
-/// Converts Ollama models' textual function-call fallback into a Responses function call.
+/// Converts explicitly tagged local-model function calls into Responses function calls.
 ///
-/// Some local models return a complete JSON object in assistant text even when the API advertises
-/// function calling. Accept only the exact `{ "name": ..., "arguments": {...} }` shape so normal
-/// assistant JSON remains visible text instead of being executed.
+/// Local model templates use different wrappers, but offcodex never treats untagged assistant JSON
+/// as executable. The accepted wrappers are the tool-call forms emitted by Ollama templates.
 pub(crate) fn convert_ollama_text_tool_call(item: ResponseItem) -> ResponseItem {
     let Some(text) = raw_assistant_output_text_from_item(&item) else {
         return item;
     };
-    let text = text.trim();
-    let text = text
-        .strip_prefix("<tools>")
-        .and_then(|text| text.trim().strip_suffix("</tools>"))
-        .map(str::trim)
-        .unwrap_or(text);
-    let text = text
-        .strip_prefix("```json")
-        .or_else(|| text.strip_prefix("```"))
-        .and_then(|text| text.trim().strip_suffix("```"))
-        .map(str::trim)
-        .unwrap_or(text);
-    let Ok(value) = serde_json::from_str::<serde_json::Value>(text) else {
+    let Some(value) = tagged_tool_call_json(&text) else {
         return item;
     };
-    let Some(object) = value.as_object() else {
-        return item;
-    };
-    if object.len() != 2 {
-        return item;
-    }
-    let (Some(name), Some(arguments)) = (
-        object.get("name").and_then(serde_json::Value::as_str),
-        object
-            .get("arguments")
-            .and_then(|value| value.is_object().then_some(value)),
-    ) else {
+    let Some((name, arguments)) = normalize_textual_tool_call(&value) else {
         return item;
     };
 
     ResponseItem::FunctionCall {
         id: None,
-        name: name.to_string(),
+        name,
         namespace: None,
         arguments: arguments.to_string(),
         encrypted_function_args: None,
         call_id: format!("ollama-text-tool-{}", Uuid::new_v4()),
         internal_chat_message_metadata_passthrough: None,
     }
+}
+
+fn tagged_tool_call_json(text: &str) -> Option<serde_json::Value> {
+    let text = text.trim();
+    let tagged = [
+        ("<tool_call>", "</tool_call>"),
+        ("<function_call>", "</function_call>"),
+        ("<tools>", "</tools>"),
+    ]
+    .into_iter()
+    .find_map(|(open, close)| {
+        let body = text
+            .strip_prefix(open)
+            .or_else(|| text.find(open).map(|index| &text[index + open.len()..]))?;
+        body.trim().strip_suffix(close).map(str::trim)
+    })
+    .or_else(|| {
+        // Some Qwen templates leak a leading special token but retain the closing marker.
+        text.strip_suffix("</tool_call>")
+            .and_then(|body| body.find('{').map(|index| &body[index..]))
+            .map(str::trim)
+    })?;
+    serde_json::from_str(tagged).ok()
+}
+
+fn normalize_textual_tool_call(value: &serde_json::Value) -> Option<(String, serde_json::Value)> {
+    let object = value.as_object()?;
+    if let (Some(name), Some(arguments)) = (
+        object.get("name").and_then(serde_json::Value::as_str),
+        object.get("arguments"),
+    ) {
+        return normalize_tool_call_arguments(name, arguments);
+    }
+    if let Some(function) = object.get("function") {
+        return normalize_textual_tool_call(function);
+    }
+    if let Some(tool_call) = object.get("tool_call") {
+        return normalize_textual_tool_call(tool_call);
+    }
+    let tool_calls = object.get("tool_calls")?.as_array()?;
+    (tool_calls.len() == 1)
+        .then(|| tool_calls.first())
+        .flatten()
+        .and_then(normalize_textual_tool_call)
+}
+
+fn normalize_tool_call_arguments(
+    name: &str,
+    arguments: &serde_json::Value,
+) -> Option<(String, serde_json::Value)> {
+    let arguments = match arguments {
+        serde_json::Value::Object(_) => arguments.clone(),
+        serde_json::Value::String(arguments) => serde_json::from_str(arguments).ok()?,
+        _ => return None,
+    };
+    arguments.is_object().then(|| (name.to_string(), arguments))
 }
 
 /// Persist a completed model response item and record any cited memory usage.

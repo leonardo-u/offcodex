@@ -60,6 +60,41 @@ fn converts_ollama_tools_tag_to_function_call() {
 }
 
 #[test]
+fn converts_tagged_tool_call_with_template_noise() {
+    let converted = convert_ollama_text_tool_call(assistant_output_text(
+        "岊\n{\"name\":\"exec_command\",\"arguments\":{\"cmd\":\"printf pippo > esempio.txt\"}}\n</tool_call>",
+    ));
+
+    assert!(matches!(
+        converted,
+        ResponseItem::FunctionCall { name, arguments, .. }
+            if name == "exec_command" && arguments == r#"{"cmd":"printf pippo > esempio.txt"}"#
+    ));
+}
+
+#[test]
+fn converts_function_wrapper_with_json_arguments_string() {
+    let converted = convert_ollama_text_tool_call(assistant_output_text(
+        r#"<function_call>{"function":{"name":"exec_command","arguments":"{\"cmd\":\"pwd\"}"}}</function_call>"#,
+    ));
+
+    assert!(matches!(
+        converted,
+        ResponseItem::FunctionCall { name, arguments, .. }
+            if name == "exec_command" && arguments == r#"{"cmd":"pwd"}"#
+    ));
+}
+
+#[test]
+fn leaves_untagged_valid_tool_json_as_text() {
+    let item = assistant_output_text(
+        r#"{"name":"exec_command","arguments":{"cmd":"touch should-not-run"}}"#,
+    );
+
+    assert_eq!(convert_ollama_text_tool_call(item.clone()), item);
+}
+
+#[test]
 fn leaves_non_tool_json_as_assistant_text() {
     let item = assistant_output_text(r#"{"name":"exec_command","arguments":"not-an-object"}"#);
 

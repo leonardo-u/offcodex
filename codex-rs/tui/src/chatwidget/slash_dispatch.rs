@@ -136,7 +136,7 @@ impl ChatWidget {
         let approval_policy = if enabled {
             AskForApproval::Never
         } else {
-            AskForApproval::OnRequest
+            AskForApproval::UnlessTrusted
         };
         self.submit_op(AppCommand::override_turn_context(
             /*cwd*/ None,
@@ -158,7 +158,7 @@ impl ChatWidget {
         let message = if enabled {
             "Auto mode enabled: tool approvals are automatic for this session."
         } else {
-            "Auto mode disabled: tool actions will ask for approval again."
+            "Auto mode disabled: untrusted tool actions will ask for approval again."
         };
         self.add_info_message(message.to_string(), /*hint*/ None);
     }

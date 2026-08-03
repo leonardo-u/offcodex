@@ -2941,12 +2941,12 @@ async fn auto_slash_command_updates_approval_policy_without_restart() {
     chat.dispatch_command_with_args(SlashCommand::Auto, "off".to_string(), Vec::new());
     assert_eq!(
         AskForApproval::from(chat.config_ref().permissions.approval_policy.value()),
-        AskForApproval::OnRequest
+        AskForApproval::UnlessTrusted
     );
     let events = std::iter::from_fn(|| rx.try_recv().ok()).collect::<Vec<_>>();
     assert!(events.iter().any(|event| matches!(
         event,
-        AppEvent::UpdateAskForApprovalPolicy(AskForApproval::OnRequest)
+        AppEvent::UpdateAskForApprovalPolicy(AskForApproval::UnlessTrusted)
     )));
 }
 
