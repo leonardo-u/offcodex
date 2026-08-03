@@ -67,6 +67,7 @@ use codex_utils_home_dir::find_codex_home;
 use codex_utils_oss::ensure_oss_provider_ready;
 use codex_utils_oss::get_default_model_for_oss_provider;
 use codex_utils_oss::local_provider_models;
+use codex_utils_oss::read_global_default_model;
 use color_eyre::eyre::WrapErr;
 use cwd_prompt::CwdPromptAction;
 pub use session_archive_commands::DeleteConfirmation;
@@ -1052,7 +1053,7 @@ pub async fn run_main(
     };
 
     let use_oss = true;
-    let local_tool_instructions = "Use exec_command for all repository inspection, file creation, file edits, and command execution. Do not present code or file contents in chat when you can act. A successful tool result is required before claiming that an action completed. If essential details are missing, stop and ask the user one concise question in chat before taking action.".to_string();
+    let local_tool_instructions = "Use exec_command for all repository inspection, file creation, file edits, and command execution. Do not present code or file contents in chat when you can act. A successful tool result is required before claiming that an action completed. If essential details are missing, stop and ask the user one concise question in chat before taking action. Always answer in the user's language; if unsupported or unclear, use English. Never switch languages unexpectedly or mix languages in one response. Keep code, JSON, command output, and tool-call payloads unchanged. After tool execution, summarize the result in the user's language.".to_string();
     let mut manually_selected_oss_provider = None;
     let model_provider_override = if use_oss {
         let bootstrap_config_with_cloud_config;
@@ -1342,7 +1343,7 @@ async fn run_ratatui_app(
     strict_config: bool,
     app_server_target: AppServerTarget,
     remote_cwd_override: Option<PathBuf>,
-    initial_config: Config,
+    mut initial_config: Config,
     manually_selected_oss_provider: Option<String>,
     overrides: ConfigOverrides,
     cli_kv_overrides: Vec<(String, toml::Value)>,
@@ -1352,6 +1353,11 @@ async fn run_ratatui_app(
     state_db: Option<StateDbHandle>,
     environment_manager: Arc<EnvironmentManager>,
 ) -> color_eyre::Result<AppExitInfo> {
+    if initial_config.model_provider_id == OLLAMA_OSS_PROVIDER_ID
+        && let Ok(Some(model)) = read_global_default_model()
+    {
+        initial_config.model = Some(model);
+    }
     let uses_remote_workspace = app_server_target.uses_remote_workspace();
     color_eyre::install()?;
 

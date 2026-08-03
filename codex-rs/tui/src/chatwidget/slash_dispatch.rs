@@ -14,6 +14,7 @@ use crate::bottom_pane::slash_commands::SlashCommandItem;
 use crate::bottom_pane::slash_commands::find_slash_command;
 use crate::goal_display::GOAL_USAGE;
 use crate::goal_files::GoalDraft;
+use codex_model_provider_info::OLLAMA_OSS_PROVIDER_ID;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum SlashCommandDispatchSource {
@@ -317,6 +318,9 @@ impl ChatWidget {
             SlashCommand::Model => {
                 self.open_model_popup();
                 self.defer_input_until_settings_applied();
+            }
+            SlashCommand::ResetModel => {
+                self.app_event_tx.send(AppEvent::ResetLocalModelDefault);
             }
             SlashCommand::Personality => {
                 self.open_personality_popup();
@@ -1094,7 +1098,8 @@ impl ChatWidget {
             plugins_command_enabled: self.config.features.enabled(Feature::Plugins),
             token_activity_command_enabled: self.has_codex_backend_auth,
             goal_command_enabled: self.config.features.enabled(Feature::Goals),
-            service_tier_commands_enabled: self.fast_mode_enabled(),
+            service_tier_commands_enabled: self.fast_mode_enabled()
+                && self.config.model_provider_id != OLLAMA_OSS_PROVIDER_ID,
             personality_command_enabled: self.config.features.enabled(Feature::Personality),
             allow_elevate_sandbox,
             side_conversation_active: self.active_side_conversation,
@@ -1133,6 +1138,7 @@ impl ChatWidget {
             | SlashCommand::Diff
             | SlashCommand::App
             | SlashCommand::Rename
+            | SlashCommand::ResetModel
             | SlashCommand::TestApproval => QueueDrain::Continue,
             SlashCommand::Feedback
             | SlashCommand::New

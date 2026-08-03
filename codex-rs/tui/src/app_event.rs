@@ -806,6 +806,36 @@ pub(crate) enum AppEvent {
     /// Update the current model slug in the running app and widget.
     UpdateModel(String),
 
+    /// Reset the global offcodex model preference.
+    ResetLocalModelDefault,
+
+    /// Ask whether a selected non-offcodex model should be customized.
+    OpenLocalModelVariantChoice {
+        base_model: String,
+    },
+
+    /// Keep a non-offcodex model for this session without saving a default.
+    LocalModelSetupUseSession {
+        model: String,
+    },
+
+    /// Open the parameter prompt for creating an offcodex model variant.
+    StartLocalModelVariantCreation {
+        base_model: String,
+    },
+
+    /// Create and optionally activate a customized local model.
+    CreateLocalModelVariant {
+        base_model: String,
+        temperature: f32,
+        num_ctx: u32,
+    },
+
+    /// Completion event for a local model variant creation request.
+    LocalModelVariantCreated {
+        result: std::result::Result<String, String>,
+    },
+
     /// Result of reading a selected Ollama model's explicit tool-call template.
     OllamaToolCallProfileLoaded {
         model: String,

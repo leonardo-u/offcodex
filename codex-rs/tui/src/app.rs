@@ -168,6 +168,7 @@ use codex_rollout::StateDbHandle;
 use codex_terminal_detection::user_agent;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use codex_utils_approval_presets::builtin_permission_profile_for_active_permission_profile;
+use codex_utils_oss::read_global_default_model;
 use color_eyre::eyre::Result;
 use color_eyre::eyre::WrapErr;
 use crossterm::event::KeyCode;
@@ -589,6 +590,7 @@ pub(crate) struct App {
     pending_primary_events: VecDeque<ThreadBufferedEvent>,
     pending_app_server_requests: PendingAppServerRequests,
     pending_startup_thread_start: bool,
+    local_model_setup_pending: bool,
     /// Invalidates in-flight full rate-limit reads when a newer rolling hard stop arrives.
     rate_limit_hard_stop_generation: u64,
     // Serialize plugin enablement writes per plugin so stale completions cannot
@@ -919,6 +921,13 @@ impl App {
             &session_selection,
             SessionSelection::StartFresh | SessionSelection::Exit
         );
+        let local_model_setup_pending = config.model_provider_id == OLLAMA_OSS_PROVIDER_ID
+            && read_global_default_model().ok().flatten().is_none()
+            && matches!(
+                &session_selection,
+                SessionSelection::StartFresh | SessionSelection::Exit
+            )
+            && initial_prompt.is_none();
         let (mut chat_widget, initial_started_thread) = match session_selection {
             SessionSelection::StartFresh | SessionSelection::Exit => {
                 spawn_startup_thread_start(&app_server, config.clone(), app_event_tx.clone());
@@ -1102,6 +1111,7 @@ See the Codex keymap documentation for supported actions and examples."
             pending_primary_events: VecDeque::new(),
             pending_app_server_requests: PendingAppServerRequests::default(),
             pending_startup_thread_start,
+            local_model_setup_pending,
             rate_limit_hard_stop_generation: 0,
             pending_plugin_enabled_writes: HashMap::new(),
             pending_hook_enabled_writes: HashMap::new(),

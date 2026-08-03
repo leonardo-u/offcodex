@@ -13,6 +13,7 @@ pub enum SlashCommand {
     // DO NOT ALPHA-SORT! Enum order is presentation order in the popup, so
     // more frequently used commands should be listed first.
     Model,
+    ResetModel,
     Ide,
     Permissions,
     Auto,
@@ -115,6 +116,7 @@ impl SlashCommand {
             SlashCommand::MemoryDrop => "DO NOT USE",
             SlashCommand::MemoryUpdate => "DO NOT USE",
             SlashCommand::Model => "choose what model and reasoning effort to use",
+            SlashCommand::ResetModel => "remove the global offcodex model default",
             SlashCommand::Ide => {
                 "include current selection, open files, and other context from your IDE"
             }
@@ -215,6 +217,7 @@ impl SlashCommand {
             SlashCommand::Diff
             | SlashCommand::Resume
             | SlashCommand::Model
+            | SlashCommand::ResetModel
             | SlashCommand::Personality
             | SlashCommand::Permissions
             | SlashCommand::Auto

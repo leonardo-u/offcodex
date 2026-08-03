@@ -101,6 +101,7 @@ use codex_utils_absolute_path::canonicalize_existing_preserving_symlinks;
 use codex_utils_cli::SharedCliOptions;
 use codex_utils_oss::ensure_oss_provider_ready;
 use codex_utils_oss::get_default_model_for_oss_provider;
+use codex_utils_oss::read_global_default_model;
 use event_processor_with_human_output::EventProcessorWithHumanOutput;
 pub use event_processor_with_jsonl_output::CodexStatus;
 pub use event_processor_with_jsonl_output::CollectedThreadEvents;
@@ -406,15 +407,21 @@ pub async fn run_main(cli: Cli, arg0_paths: Arg0DispatchPaths) -> anyhow::Result
     let model = if let Some(model) = model_cli_arg {
         Some(model)
     } else if use_oss {
-        model_provider
-            .as_ref()
-            .and_then(|provider_id| get_default_model_for_oss_provider(provider_id))
-            .map(std::borrow::ToOwned::to_owned)
+        model_provider.as_ref().and_then(|provider_id| {
+            if provider_id == OLLAMA_OSS_PROVIDER_ID {
+                read_global_default_model()
+                    .ok()
+                    .flatten()
+                    .or_else(|| get_default_model_for_oss_provider(provider_id).map(str::to_owned))
+            } else {
+                get_default_model_for_oss_provider(provider_id).map(str::to_owned)
+            }
+        })
     } else {
         None // No model specified, will use the default.
     };
 
-    let local_tool_instructions = "Use tools for all repository changes. Do not present code, patches, or file contents in chat when you can act: read files first, edit them with apply_patch, and run commands with exec. Tool calls must be valid JSON. If a tool call fails, inspect its output and correct it with another tool call.".to_string();
+    let local_tool_instructions = "Use tools for all repository changes. Do not present code, patches, or file contents in chat when you can act: read files first, edit them with apply_patch, and run commands with exec. Tool calls must be valid JSON. If a tool call fails, inspect its output and correct it with another tool call. Always answer in the user's language; if unsupported or unclear, use English. Never switch languages unexpectedly or mix languages in one response. Keep code, JSON, command output, and tool-call payloads unchanged. After tool execution, summarize the result in the user's language.".to_string();
     let overrides = ConfigOverrides {
         model,
         review_model: None,

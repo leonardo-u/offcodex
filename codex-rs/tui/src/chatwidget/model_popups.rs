@@ -8,6 +8,96 @@ use super::*;
 const ULTRA_REASONING_CONCURRENCY_WARNING_THRESHOLD: usize = 8;
 
 impl ChatWidget {
+    pub(crate) fn open_local_model_variant_choice(&mut self, base_model: String) {
+        let create_model = base_model.clone();
+        let use_session_model = base_model.clone();
+        self.bottom_pane.show_selection_view(SelectionViewParams {
+            title: Some("Configure local model".to_string()),
+            items: vec![
+                SelectionItem {
+                    name: "Create an offcodex variant".to_string(),
+                    description: Some(
+                        "Recommended for reliable local tool calling; choose temperature and context next."
+                            .to_string(),
+                    ),
+                    actions: vec![Box::new(move |tx| {
+                        tx.send(AppEvent::StartLocalModelVariantCreation {
+                            base_model: create_model.clone(),
+                        });
+                    })],
+                    dismiss_on_select: true,
+                    ..Default::default()
+                },
+                SelectionItem {
+                    name: "Use this model for this session only".to_string(),
+                    description: Some("The global default will remain unset.".to_string()),
+                    actions: vec![Box::new(move |tx| {
+                        tx.send(AppEvent::LocalModelSetupUseSession {
+                            model: use_session_model.clone(),
+                        });
+                    })],
+                    dismiss_on_select: true,
+                    ..Default::default()
+                },
+            ],
+            footer_hint: Some(standard_popup_hint_line()),
+            ..Default::default()
+        });
+    }
+
+    pub(crate) fn open_local_model_variant_parameters(&mut self, base_model: String) {
+        let tx = self.app_event_tx.clone();
+        let recommended_num_ctx = codex_utils_oss::recommended_local_num_ctx();
+        let warning = format!(
+            "⚠ WARNING: custom sampling can reduce tool reliability or exhaust VRAM. Defaults: temperature {} and num_ctx {}. Format: <temperature> <num_ctx>",
+            codex_utils_oss::DEFAULT_LOCAL_TEMPERATURE,
+            recommended_num_ctx,
+        );
+        let view = CustomPromptView::new(
+            "Create offcodex model variant".to_string(),
+            format!("0.1 {recommended_num_ctx}"),
+            format!(
+                "{} {}",
+                codex_utils_oss::DEFAULT_LOCAL_TEMPERATURE,
+                recommended_num_ctx
+            ),
+            Some(warning),
+            Box::new(move |input: String| {
+                let mut values = input.split_whitespace();
+                let Some(temperature) = values.next().and_then(|value| value.parse().ok()) else {
+                    tx.send(AppEvent::InsertHistoryCell(Box::new(
+                        history_cell::new_error_event(
+                            "Temperature must be a number between 0.0 and 2.0.".to_string(),
+                        ),
+                    )));
+                    return;
+                };
+                let Some(num_ctx) = values.next().and_then(|value| value.parse().ok()) else {
+                    tx.send(AppEvent::InsertHistoryCell(Box::new(
+                        history_cell::new_error_event(
+                            "num_ctx must be a positive integer.".to_string(),
+                        ),
+                    )));
+                    return;
+                };
+                if !(0.0..=2.0).contains(&temperature) || num_ctx == 0 {
+                    tx.send(AppEvent::InsertHistoryCell(Box::new(
+                        history_cell::new_error_event(
+                            "Values are outside the supported range.".to_string(),
+                        ),
+                    )));
+                    return;
+                }
+                tx.send(AppEvent::CreateLocalModelVariant {
+                    base_model: base_model.clone(),
+                    temperature,
+                    num_ctx,
+                });
+            }),
+        );
+        self.bottom_pane.show_view(Box::new(view));
+    }
+
     /// Open a popup to choose a quick auto model. Selecting "All models"
     /// opens the full picker with every available preset.
     pub(crate) fn open_model_popup(&mut self) {

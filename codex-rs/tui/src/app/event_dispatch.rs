@@ -12,7 +12,12 @@ use crate::external_agent_config_migration::flow::ExternalAgentConfigMigrationFl
 #[cfg(target_os = "windows")]
 use codex_config::types::WindowsSandboxModeToml;
 use codex_model_provider_info::OLLAMA_OSS_PROVIDER_ID;
+use codex_utils_oss::create_local_model_variant;
 use codex_utils_oss::local_provider_tool_call_profile;
+use codex_utils_oss::offcodex_model_name;
+use codex_utils_oss::read_global_default_model;
+use codex_utils_oss::reset_global_default_model;
+use codex_utils_oss::write_global_default_model;
 use std::process::Command;
 
 const SHUTDOWN_FIRST_EXIT_TIMEOUT: Duration = Duration::from_secs(/*secs*/ 2);
@@ -107,6 +112,10 @@ impl App {
             AppEvent::StartupThreadStarted { result } => {
                 self.handle_startup_thread_started(app_server, result)
                     .await?;
+                if self.local_model_setup_pending {
+                    self.local_model_setup_pending = false;
+                    self.chat_widget.open_model_popup();
+                }
             }
             AppEvent::ClearUi { name } => {
                 self.clear_terminal_ui(tui, /*redraw_header*/ false)?;
@@ -1245,6 +1254,7 @@ impl App {
             AppEvent::UpdateModel(model) => {
                 self.chat_widget.set_model(&model);
                 if self.config.model_provider_id == OLLAMA_OSS_PROVIDER_ID {
+                    self.config.model = Some(model.clone());
                     self.chat_widget.add_info_message(
                         format!("Querying Ollama for the tool-call profile of `{model}`…"),
                         /*hint*/ None,
@@ -1271,6 +1281,68 @@ impl App {
                 self.sync_active_thread_service_tier_to_cached_session()
                     .await;
             }
+            AppEvent::ResetLocalModelDefault => match reset_global_default_model() {
+                Ok(()) => self.chat_widget.add_info_message(
+                    "Global offcodex model default removed; it will be selected again on the next startup."
+                        .to_string(),
+                    /*hint*/ None,
+                ),
+                Err(error) => self.chat_widget.add_error_message(format!(
+                    "Could not reset the global offcodex model default: {error}"
+                )),
+            },
+            AppEvent::OpenLocalModelVariantChoice { base_model } => {
+                self.chat_widget.open_local_model_variant_choice(base_model);
+            }
+            AppEvent::LocalModelSetupUseSession { model } => {
+                self.chat_widget.add_info_message(
+                    format!("Using {model} for this session only; no global default was saved."),
+                    /*hint*/ None,
+                );
+            }
+            AppEvent::StartLocalModelVariantCreation { base_model } => {
+                self.chat_widget
+                    .open_local_model_variant_parameters(base_model);
+            }
+            AppEvent::CreateLocalModelVariant {
+                base_model,
+                temperature,
+                num_ctx,
+            } => {
+                let model = offcodex_model_name(&base_model);
+                let config = self.config.clone();
+                let tx = self.app_event_tx.clone();
+                tokio::spawn(async move {
+                    let result = create_local_model_variant(
+                        OLLAMA_OSS_PROVIDER_ID,
+                        &config,
+                        &base_model,
+                        &model,
+                        temperature,
+                        num_ctx,
+                    )
+                    .await
+                    .and_then(|()| write_global_default_model(&model))
+                    .map(|()| model)
+                    .map_err(|error| error.to_string());
+                    tx.send(AppEvent::LocalModelVariantCreated { result });
+                });
+            }
+            AppEvent::LocalModelVariantCreated { result } => match result {
+                Ok(model) => {
+                    self.config.model = Some(model.clone());
+                    self.chat_widget.set_model(&model);
+                    self.sync_active_thread_model_setting(app_server, model.clone())
+                        .await;
+                    self.chat_widget.add_info_message(
+                        format!("Created and saved {model} as the global offcodex default."),
+                        /*hint*/ None,
+                    );
+                }
+                Err(error) => self.chat_widget.add_error_message(format!(
+                    "Could not create the offcodex model variant: {error}"
+                )),
+            },
             AppEvent::OllamaToolCallProfileLoaded { model, result } => match result {
                 Ok(wrappers) if wrappers.is_empty() => self.chat_widget.add_warning_message(
                     format!(
@@ -1855,6 +1927,34 @@ impl App {
                 }
             }
             AppEvent::PersistModelSelection { model, effort } => {
+                if self.config.model_provider_id == OLLAMA_OSS_PROVIDER_ID {
+                    let has_global_default = read_global_default_model()
+                        .ok()
+                        .flatten()
+                        .is_some();
+                    if !has_global_default {
+                        if model.starts_with("offcodex-") {
+                            match write_global_default_model(&model) {
+                                Ok(()) => self.chat_widget.add_info_message(
+                                    format!("Saved {model} as the global offcodex default."),
+                                    /*hint*/ None,
+                                ),
+                                Err(error) => self.chat_widget.add_error_message(format!(
+                                    "Could not save the global offcodex default: {error}"
+                                )),
+                            }
+                        } else {
+                            self.chat_widget
+                                .open_local_model_variant_choice(model.clone());
+                        }
+                    } else {
+                        self.chat_widget.add_info_message(
+                            format!("Model changed to {model} for this session only."),
+                            /*hint*/ None,
+                        );
+                    }
+                    return Ok(AppRunControl::Continue);
+                }
                 match crate::config_update::write_config_batch(
                     app_server.request_handle(),
                     crate::config_update::build_model_selection_edits(

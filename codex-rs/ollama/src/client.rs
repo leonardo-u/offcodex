@@ -187,6 +187,39 @@ impl OllamaClient {
         })
     }
 
+    /// Create a model variant with a clean offcodex system prompt and local sampling settings.
+    pub async fn create_model(
+        &self,
+        model: &str,
+        base_model: &str,
+        temperature: f32,
+        num_ctx: u32,
+    ) -> io::Result<()> {
+        let create_url = format!("{}/api/create", self.host_root.trim_end_matches('/'));
+        let modelfile = format!(
+            "FROM {base_model}\nPARAMETER temperature {temperature}\nPARAMETER num_ctx {num_ctx}\nSYSTEM \"\"\"You are an offcodex coding agent. Always answer in the user's language. If that language is unsupported or unclear, use English. Never switch languages unexpectedly or mix languages in the same response. Keep code, JSON, command output, and tool-call payloads unchanged. After tool execution, summarize the result in the user's language. Use the provided tools whenever they can complete the task. Prefer native function calls; when textual calls are required, emit only <tool_call>{{\\\"name\\\":<function-name>,\\\"arguments\\\":<args-json-object>}}</tool_call>. Never claim a file or command succeeded without a successful tool result.\"\"\""
+        );
+        let resp = self
+            .client
+            .post(create_url)
+            .json(&serde_json::json!({
+                "model": model,
+                "modelfile": modelfile,
+                "stream": false,
+            }))
+            .send()
+            .await
+            .map_err(io::Error::other)?;
+        if resp.status().is_success() {
+            Ok(())
+        } else {
+            Err(io::Error::other(format!(
+                "Ollama could not create model `{model}`: HTTP {}",
+                resp.status()
+            )))
+        }
+    }
+
     /// Query the server for its version string, returning `None` when unavailable.
     pub async fn fetch_version(&self) -> io::Result<Option<Version>> {
         let version_url = format!("{}/api/version", self.host_root.trim_end_matches('/'));
