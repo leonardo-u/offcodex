@@ -523,3 +523,9 @@ mod tests {
 ");
     }
 }
+
+pub(super) fn linux_sandbox_prerequisite_issues(
+    config: &Config,
+) -> Vec<codex_sandboxing::LinuxSandboxPrerequisiteIssue> {
+    codex_sandboxing::linux_sandbox_prerequisite_issues(config.permissions.permission_profile())
+}

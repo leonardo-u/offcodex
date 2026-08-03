@@ -37,6 +37,53 @@ const SYSTEM_BWRAP_PROBE_TIMEOUT: Duration = Duration::from_millis(500);
 const SYSTEM_BWRAP_PROBE_POLL_INTERVAL: Duration = Duration::from_millis(50);
 const SYSTEM_BWRAP_PROBE_STDERR_LIMIT_BYTES: u64 = 64 * 1024;
 
+/// A host prerequisite that can prevent Bubblewrap from creating its sandbox.
+///
+/// These values have a narrowly-scoped, known remediation. Other failures are reported
+/// separately so callers can show diagnostics without suggesting an unsafe workaround.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum LinuxSandboxPrerequisiteIssue {
+    EnableUnprivilegedUserNamespaces,
+    IncreaseUserNamespaceLimit,
+    RelaxAppArmorUserNamespaceRestriction,
+    ManualInvestigationRequired,
+}
+
+/// Returns actionable host prerequisites after the Bubblewrap self-test fails.
+pub fn linux_sandbox_prerequisite_issues(
+    permission_profile: &PermissionProfile,
+) -> Vec<LinuxSandboxPrerequisiteIssue> {
+    let Some(warning) = system_bwrap_warning(permission_profile) else {
+        return Vec::new();
+    };
+    if warning != USER_NAMESPACE_WARNING {
+        return if warning == WSL1_BWRAP_WARNING {
+            vec![LinuxSandboxPrerequisiteIssue::ManualInvestigationRequired]
+        } else {
+            Vec::new()
+        };
+    }
+
+    let mut issues = Vec::new();
+    if read_sysctl_value("/proc/sys/kernel/unprivileged_userns_clone") == Some(0) {
+        issues.push(LinuxSandboxPrerequisiteIssue::EnableUnprivilegedUserNamespaces);
+    }
+    if read_sysctl_value("/proc/sys/user/max_user_namespaces").is_some_and(|value| value == 0) {
+        issues.push(LinuxSandboxPrerequisiteIssue::IncreaseUserNamespaceLimit);
+    }
+    if read_sysctl_value("/proc/sys/kernel/apparmor_restrict_unprivileged_userns") == Some(1) {
+        issues.push(LinuxSandboxPrerequisiteIssue::RelaxAppArmorUserNamespaceRestriction);
+    }
+    if issues.is_empty() {
+        issues.push(LinuxSandboxPrerequisiteIssue::ManualInvestigationRequired);
+    }
+    issues
+}
+
+fn read_sysctl_value(path: &str) -> Option<u64> {
+    std::fs::read_to_string(path).ok()?.trim().parse().ok()
+}
+
 pub fn system_bwrap_warning(permission_profile: &PermissionProfile) -> Option<String> {
     if !should_warn_about_system_bwrap(permission_profile) {
         return None;

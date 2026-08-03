@@ -11,7 +11,11 @@ mod violation;
 mod windows;
 
 #[cfg(target_os = "linux")]
+pub use bwrap::LinuxSandboxPrerequisiteIssue;
+#[cfg(target_os = "linux")]
 pub use bwrap::find_system_bwrap_in_path;
+#[cfg(target_os = "linux")]
+pub use bwrap::linux_sandbox_prerequisite_issues;
 #[cfg(target_os = "linux")]
 pub use bwrap::system_bwrap_warning;
 pub use codex_windows_sandbox::WindowsSandboxProxySettingsMode;
@@ -53,6 +57,17 @@ pub fn system_bwrap_warning(
 ) -> Option<String> {
     None
 }
+
+#[cfg(not(target_os = "linux"))]
+pub fn linux_sandbox_prerequisite_issues(
+    _permission_profile: &codex_protocol::models::PermissionProfile,
+) -> Vec<LinuxSandboxPrerequisiteIssue> {
+    Vec::new()
+}
+
+#[cfg(not(target_os = "linux"))]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum LinuxSandboxPrerequisiteIssue {}
 
 impl From<SandboxTransformError> for CodexErr {
     fn from(err: SandboxTransformError) -> Self {

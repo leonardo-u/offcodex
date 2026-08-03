@@ -37,6 +37,7 @@ use codex_file_search::FileMatch;
 use codex_message_history::HistoryBatchCursor;
 use codex_protocol::ThreadId;
 use codex_protocol::openai_models::ModelPreset;
+use codex_sandboxing::LinuxSandboxPrerequisiteIssue;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use codex_utils_approval_presets::ApprovalPreset;
 use uuid::Uuid;
@@ -735,6 +736,33 @@ pub(crate) enum AppEvent {
     /// Begin buffering thread-switch replay cells so the final scrollback write can reuse the
     /// resize-reflow tail renderer.
     BeginThreadSwitchHistoryReplayBuffer,
+
+    /// Present one actionable Linux Bubblewrap prerequisite after the startup self-test fails.
+    OpenLinuxSandboxIssuePrompt {
+        issue: LinuxSandboxPrerequisiteIssue,
+        remaining: Vec<LinuxSandboxPrerequisiteIssue>,
+    },
+
+    /// Ask whether one approved Linux Bubblewrap change should persist.
+    OpenLinuxSandboxPersistencePrompt {
+        issue: LinuxSandboxPrerequisiteIssue,
+        remaining: Vec<LinuxSandboxPrerequisiteIssue>,
+    },
+
+    /// Apply one confirmed Linux Bubblewrap prerequisite through PolicyKit.
+    ApplyLinuxSandboxPrerequisite {
+        issue: LinuxSandboxPrerequisiteIssue,
+        persistent: bool,
+        remaining: Vec<LinuxSandboxPrerequisiteIssue>,
+    },
+
+    /// Report the result of applying one Linux Bubblewrap prerequisite.
+    LinuxSandboxPrerequisiteApplied {
+        issue: LinuxSandboxPrerequisiteIssue,
+        persistent: bool,
+        remaining: Vec<LinuxSandboxPrerequisiteIssue>,
+        result: Result<(), String>,
+    },
 
     InsertHistoryCell(Box<dyn HistoryCell>),
 

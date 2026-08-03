@@ -11,8 +11,81 @@ use crate::config_update::format_config_error;
 use crate::external_agent_config_migration::flow::ExternalAgentConfigMigrationFlowOutcome;
 #[cfg(target_os = "windows")]
 use codex_config::types::WindowsSandboxModeToml;
+use std::process::Command;
 
 const SHUTDOWN_FIRST_EXIT_TIMEOUT: Duration = Duration::from_secs(/*secs*/ 2);
+
+fn apply_linux_sandbox_prerequisite(
+    issue: &codex_sandboxing::LinuxSandboxPrerequisiteIssue,
+    persistent: bool,
+) -> Result<(), String> {
+    use codex_sandboxing::LinuxSandboxPrerequisiteIssue;
+
+    let (key, value, persistent_file) = match issue {
+        LinuxSandboxPrerequisiteIssue::EnableUnprivilegedUserNamespaces => (
+            "kernel.unprivileged_userns_clone",
+            "1",
+            "/etc/sysctl.d/90-offcodex-userns.conf",
+        ),
+        LinuxSandboxPrerequisiteIssue::IncreaseUserNamespaceLimit => (
+            "user.max_user_namespaces",
+            "1024",
+            "/etc/sysctl.d/91-offcodex-userns-limit.conf",
+        ),
+        LinuxSandboxPrerequisiteIssue::RelaxAppArmorUserNamespaceRestriction => (
+            "kernel.apparmor_restrict_unprivileged_userns",
+            "0",
+            "/etc/sysctl.d/92-offcodex-apparmor-userns.conf",
+        ),
+        LinuxSandboxPrerequisiteIssue::ManualInvestigationRequired => {
+            return Err("No safe automatic repair is known for this failure.".to_string());
+        }
+    };
+    let mut command = Command::new("pkexec");
+    if persistent {
+        command.args([
+            "sh",
+            "-c",
+            &format!("printf '%s\\n' '{key} = {value}' > {persistent_file} && sysctl --system"),
+        ]);
+    } else {
+        command.args(["sysctl", "-w", &format!("{key}={value}")]);
+    }
+    let output = command.output().map_err(|error| {
+        if error.kind() == std::io::ErrorKind::NotFound {
+            "PolicyKit's `pkexec` is not installed or is not on PATH.".to_string()
+        } else {
+            format!("Failed to start the privileged repair: {error}")
+        }
+    })?;
+    if output.status.success() {
+        return Ok(());
+    }
+    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    Err(if stderr.is_empty() { stdout } else { stderr })
+}
+
+fn linux_sandbox_recovery_guidance(
+    issue: &codex_sandboxing::LinuxSandboxPrerequisiteIssue,
+) -> &'static str {
+    use codex_sandboxing::LinuxSandboxPrerequisiteIssue;
+
+    match issue {
+        LinuxSandboxPrerequisiteIssue::EnableUnprivilegedUserNamespaces => {
+            "Install `polkit` and `procps` if `pkexec` or `sysctl` is missing; otherwise ask your system administrator to enable `kernel.unprivileged_userns_clone=1`."
+        }
+        LinuxSandboxPrerequisiteIssue::IncreaseUserNamespaceLimit => {
+            "Install `polkit` and `procps` if needed; otherwise ask your system administrator to set `user.max_user_namespaces` to a non-zero value."
+        }
+        LinuxSandboxPrerequisiteIssue::RelaxAppArmorUserNamespaceRestriction => {
+            "If PolicyKit is unavailable, install `polkit` and `procps`; if a corporate/container policy restores the restriction, ask its administrator to allow Bubblewrap user namespaces."
+        }
+        LinuxSandboxPrerequisiteIssue::ManualInvestigationRequired => {
+            "Check that `bwrap`, `pkexec`, and `sysctl` are installed, then inspect container, LSM, and kernel policies. WSL1 cannot support Bubblewrap user namespaces; use WSL2."
+        }
+    }
+}
 
 impl App {
     pub(super) async fn handle_event(
@@ -330,6 +403,64 @@ impl App {
             AppEvent::BeginThreadSwitchHistoryReplayBuffer => {
                 self.begin_thread_switch_history_replay_buffer();
             }
+            AppEvent::OpenLinuxSandboxIssuePrompt { issue, remaining } => {
+                self.chat_widget
+                    .open_linux_sandbox_issue_prompt(issue, remaining);
+            }
+            AppEvent::OpenLinuxSandboxPersistencePrompt { issue, remaining } => {
+                self.chat_widget
+                    .open_linux_sandbox_persistence_prompt(issue, remaining);
+            }
+            AppEvent::ApplyLinuxSandboxPrerequisite {
+                issue,
+                persistent,
+                remaining,
+            } => {
+                let tx = self.app_event_tx.clone();
+                tokio::task::spawn_blocking(move || {
+                    let result = apply_linux_sandbox_prerequisite(&issue, persistent);
+                    tx.send(AppEvent::LinuxSandboxPrerequisiteApplied {
+                        issue,
+                        persistent,
+                        remaining,
+                        result,
+                    });
+                });
+            }
+            AppEvent::LinuxSandboxPrerequisiteApplied {
+                issue,
+                persistent,
+                remaining,
+                result,
+            } => {
+                match result {
+                    Ok(()) => {
+                        let scope = if persistent {
+                            "permanently"
+                        } else {
+                            "until the next reboot"
+                        };
+                        self.chat_widget.add_info_message(
+                            format!("Applied the Bubblewrap prerequisite {scope}. The next tool call will use the sandbox self-test again."),
+                            /*hint*/ None,
+                        );
+                    }
+                    Err(error) => self.chat_widget.add_error_message(format!(
+                        "Could not apply the Bubblewrap prerequisite: {error}
+
+{}",
+                        linux_sandbox_recovery_guidance(&issue)
+                    )),
+                }
+                if let Some((next, rest)) = remaining.split_first() {
+                    self.app_event_tx
+                        .send(AppEvent::OpenLinuxSandboxIssuePrompt {
+                            issue: next.clone(),
+                            remaining: rest.to_vec(),
+                        });
+                }
+            }
+
             AppEvent::InsertHistoryCell(cell) => {
                 self.insert_history_cell(tui, cell);
             }

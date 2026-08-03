@@ -146,6 +146,7 @@ use codex_features::Feature;
 use codex_features::FeaturesToml;
 use codex_model_provider::create_model_provider;
 use codex_model_provider_info::ModelProviderInfo;
+use codex_model_provider_info::OLLAMA_OSS_PROVIDER_ID;
 use codex_models_manager::model_presets::HIDE_GPT_5_1_CODEX_MAX_MIGRATION_PROMPT_CONFIG;
 use codex_models_manager::model_presets::HIDE_GPT5_1_MIGRATION_PROMPT_CONFIG;
 use codex_otel::SessionTelemetry;
@@ -797,6 +798,13 @@ impl App {
         let app_event_tx = AppEventSender::new(app_event_tx);
         emit_project_config_warnings(&app_event_tx, &config);
         emit_system_bwrap_warning(&app_event_tx, &config);
+        let mut linux_sandbox_issues = linux_sandbox_prerequisite_issues(&config).into_iter();
+        if let Some(issue) = linux_sandbox_issues.next() {
+            app_event_tx.send(AppEvent::OpenLinuxSandboxIssuePrompt {
+                issue,
+                remaining: linux_sandbox_issues.collect(),
+            });
+        }
         tui.set_notification_settings(
             config.tui_notifications.method,
             config.tui_notifications.condition,
@@ -821,7 +829,18 @@ impl App {
             );
         }
         let mut model = config.model.clone().unwrap_or(bootstrap.default_model);
-        let available_models = bootstrap.available_models;
+        let mut available_models = bootstrap.available_models;
+        if let Some(model_catalog) = config.model_catalog.as_ref()
+            && !model_catalog.models.is_empty()
+        {
+            available_models = model_catalog
+                .models
+                .clone()
+                .into_iter()
+                .map(ModelPreset::from)
+                .collect();
+            ModelPreset::mark_default_by_picker_visibility(&mut available_models);
+        }
         let remote_connection = crate::status::remote_connection::remote_connection_status_value(
             &app_server_target,
             app_server.server_version(),
@@ -1153,7 +1172,10 @@ See the Codex keymap documentation for supported actions and examples."
         // Kick off a non-blocking rate-limit prefetch so the first `/status`
         // already has data and available reset credits can be surfaced, without
         // delaying the initial frame render.
-        if requires_openai_auth && has_chatgpt_account {
+        if app.config.model_provider_id != OLLAMA_OSS_PROVIDER_ID
+            && requires_openai_auth
+            && has_chatgpt_account
+        {
             let reset_hint_request_id = app.chat_widget.start_rate_limit_reset_startup_check();
             app.refresh_rate_limits(
                 &app_server,
