@@ -8,7 +8,7 @@
 
 ## What is offcodex?
 
-offcodex is a fork of Codex CLI designed to run coding agents primarily through local model providers. Its default provider is [Ollama](https://ollama.com/), with a default model of `qwen2.5:14b`.
+offcodex (Offline Codex) is a fork of Codex CLI designed to run coding agents primarily through local model providers. Its default provider is [Ollama](https://ollama.com/), with a default model of `qwen2.5:14b`.
 
 It is tuned for models such as `qwen2.5-coder:14b`, `hhao/qwen2.5-coder-tools:14b`, and compatible Qwen or DeepSeek models. The local agent loop includes a compact tool surface, explicit tool-use instructions, conservative coding sampling settings, and a parser fallback for models that return tool calls as JSON text instead of native function calls.
 
