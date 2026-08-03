@@ -14,6 +14,20 @@ It is tuned for models such as `qwen2.5-coder:14b`, `hhao/qwen2.5-coder-tools:14
 
 Local models can inspect, create, edit, and patch files, and run terminal commands through the sandboxed tool runtime. The Linux startup check detects common Bubblewrap/user-namespace failures and offers approved repairs individually, either until reboot or permanently.
 
+### Linux sandbox recovery
+
+offcodex runs a short Bubblewrap self-test at startup when the Linux tool sandbox is enabled. This catches failures before a local model attempts a command and then incorrectly assumes that a file was created or a command was executed.
+
+When the test fails, offcodex checks for common host-side causes and presents each applicable repair separately:
+
+- unprivileged user namespaces disabled by the kernel;
+- a zero `user.max_user_namespaces` limit;
+- Ubuntu/AppArmor restrictions that prevent Bubblewrap from mapping the user namespace.
+
+Every repair requires explicit approval. After approving a repair, choose either **until the next reboot** (a global kernel setting that resets after reboot) or **permanently** (a dedicated `/etc/sysctl.d/` configuration file). These settings cannot be limited to one offcodex process, so “temporary” intentionally means “until reboot”, not merely “until this terminal closes”.
+
+The repair uses PolicyKit (`pkexec`) and `sysctl`; if either is unavailable, authorization is denied, or a container/organization policy blocks the change, offcodex reports the command failure and gives recovery guidance. It does not silently weaken the sandbox or fall back to unsandboxed command execution.
+
 ## Quickstart
 
 ### Prerequisites
