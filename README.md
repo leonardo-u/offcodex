@@ -1,81 +1,71 @@
-<p align="center"><strong>Codex CLI</strong> is a coding agent from OpenAI that runs locally on your computer.
+<p align="center"><strong>offcodex</strong> is a local-first coding agent CLI, forked from Codex and optimized for small and medium local LLMs.</p>
+
 <p align="center">
-  <img src="https://github.com/openai/codex/blob/main/.github/codex-cli-splash.png" alt="Codex CLI splash" width="80%" />
+  <img src="https://github.com/leonardo-u/offcodex/blob/main/.github/codex-cli-splash.png" alt="offcodex splash" width="80%" />
 </p>
-</br>
-If you want Codex in your code editor (VS Code, Cursor, Windsurf), <a href="https://developers.openai.com/codex/ide">install in your IDE.</a>
-</br>If you want the desktop app experience, run <code>codex app</code> or visit <a href="https://chatgpt.com/codex?app-landing-page=true">the Codex App page</a>.
-</br>If you are looking for the <em>cloud-based agent</em> from OpenAI, <strong>Codex Web</strong>, go to <a href="https://chatgpt.com/codex">chatgpt.com/codex</a>.</p>
 
 ---
 
+## What is offcodex?
+
+offcodex is a fork of Codex CLI designed to run coding agents primarily through local model providers. Its default provider is [Ollama](https://ollama.com/), with a default model of `qwen2.5:14b`.
+
+It is tuned for models such as `qwen2.5-coder:14b`, `hhao/qwen2.5-coder-tools:14b`, and compatible Qwen or DeepSeek models. The local agent loop includes a compact tool surface, explicit tool-use instructions, conservative coding sampling settings, and a parser fallback for models that return tool calls as JSON text instead of native function calls.
+
+Local models can inspect, create, edit, and patch files, and run terminal commands through the sandboxed tool runtime. The Linux startup check detects common Bubblewrap/user-namespace failures and offers approved repairs individually, either until reboot or permanently.
+
 ## Quickstart
 
-### Installing and running Codex CLI
+### Prerequisites
 
-Run the following on Mac or Linux to install Codex CLI:
-
-```shell
-curl -fsSL https://chatgpt.com/codex/install.sh | sh
-```
-
-Run the following on Windows to install Codex CLI:
+- Rust toolchain and `cargo`
+- Ollama running locally
+- A local coding model, for example:
 
 ```shell
-powershell -ExecutionPolicy ByPass -c "irm https://chatgpt.com/codex/install.ps1 | iex"
+ollama pull qwen2.5:14b
+ollama pull qwen2.5-coder:14b
 ```
 
-The standalone installers download from `https://releases.openai.com/codex` by default and fall back to GitHub Releases if a metadata or asset download is unavailable. To force GitHub Releases, set `CODEX_INSTALLER_USE_RELEASES_OPENAI_COM` to `false` (`0` and `no` are also accepted):
+### Install from this repository
+
+Clone the fork and run its isolated installer:
 
 ```shell
-curl -fsSL https://chatgpt.com/codex/install.sh | CODEX_INSTALLER_USE_RELEASES_OPENAI_COM=false sh
+git clone https://github.com/leonardo-u/offcodex.git
+cd offcodex
+./scripts/install/install-local.sh
 ```
 
-```powershell
-$env:CODEX_INSTALLER_USE_RELEASES_OPENAI_COM='false'; irm https://chatgpt.com/codex/install.ps1 | iex
-```
+This builds the project and installs only `~/.local/bin/offcodex`; it does not replace an existing `codex` binary.
 
-Codex CLI can also be installed via the following package managers:
+Start the agent with:
 
 ```shell
-# Install using npm
-npm install -g @openai/codex
+offcodex
 ```
 
-```shell
-# Install using Homebrew
-brew install --cask codex
-```
-
-Then simply run `codex` to get started.
+Use `/model` to select any model installed in Ollama, and `/auto on` or `/auto off` to change tool-approval behavior without restarting the session.
 
 <details>
-<summary>You can also go to the <a href="https://github.com/openai/codex/releases/latest">latest GitHub Release</a> and download the appropriate binary for your platform.</summary>
+<summary>You can also go to the <a href="https://github.com/leonardo-u/offcodex/releases/latest">latest offcodex GitHub Release</a> and download the appropriate binary for your platform.</summary>
 
-Each GitHub Release contains many executables, but in practice, you likely want one of these:
-
-- macOS
-  - Apple Silicon/arm64: `codex-aarch64-apple-darwin.tar.gz`
-  - x86_64 (older Mac hardware): `codex-x86_64-apple-darwin.tar.gz`
-- Linux
-  - x86_64: `codex-x86_64-unknown-linux-musl.tar.gz`
-  - arm64: `codex-aarch64-unknown-linux-musl.tar.gz`
-
-Each archive contains a single entry with the platform baked into the name (e.g., `codex-x86_64-unknown-linux-musl`), so you likely want to rename it to `codex` after extracting it.
+Release assets use the `offcodex-*` naming convention. If you download an archive directly, extract it and place the `offcodex` binary somewhere on your `PATH`.
 
 </details>
 
-### Using Codex with your ChatGPT plan
+## Local-model behavior
 
-Run `codex` and select **Sign in with ChatGPT**. We recommend signing into your ChatGPT account to use Codex as part of your Plus, Pro, Business, Edu, or Enterprise plan. [Learn more about what's included in your ChatGPT plan](https://help.openai.com/en/articles/11369540-codex-in-chatgpt).
-
-You can also use Codex with an API key, but this requires [additional setup](https://developers.openai.com/codex/auth#sign-in-with-an-api-key).
+- Ollama is the default local provider; `--local-provider ollama` remains available for explicit use.
+- Requests use conservative local coding options (`temperature = 0.1`, `num_ctx = 16384`).
+- Tool calls are validated and malformed JSON is returned to the model with a correction request instead of crashing the session.
+- For local models, offcodex exposes a small, reliable baseline of file, patch, terminal, and web tools rather than overwhelming the model with every available integration.
+- Commands still run in the configured sandbox and retain normal approval controls.
 
 ## Docs
 
-- [**Codex Documentation**](https://developers.openai.com/codex)
+- [**Installation and build notes**](./docs/install.md)
 - [**Contributing**](./docs/contributing.md)
-- [**Installing & building**](./docs/install.md)
-- [**Open source fund**](./docs/open-source-fund.md)
+- [**Issues and releases**](https://github.com/leonardo-u/offcodex)
 
 This repository is licensed under the [Apache-2.0 License](LICENSE).
