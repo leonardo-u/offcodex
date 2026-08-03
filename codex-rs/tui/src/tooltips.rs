@@ -8,6 +8,7 @@ use std::sync::OnceLock;
 use std::time::Duration;
 
 const USELESS_FACT_URL: &str = "https://uselessfacts.jsph.pl/api/v2/facts/random";
+const JOKE_URL: &str = "https://v2.jokeapi.dev/joke/Any?type=single";
 const FACT_FETCH_TIMEOUT: Duration = Duration::from_millis(/*millis*/ 800);
 
 const CAT_FACTS: &[&str] = &[
@@ -44,43 +45,53 @@ struct UselessFactResponse {
     text: String,
 }
 
-/// Fetch the startup fact once, falling back to a bundled cat fact without network access.
+#[derive(Deserialize)]
+struct JokeResponse {
+    joke: String,
+}
+
+/// Fetch a startup fact or joke once, falling back to a bundled cat fact without network access.
 pub(crate) async fn prewarm(http_client_factory: HttpClientFactory) {
     if STARTUP_FACT.get().is_some() {
         return;
     }
 
-    let fact = tokio::time::timeout(
-        FACT_FETCH_TIMEOUT,
-        fetch_remote_fact(http_client_factory),
-    )
-    .await
-    .ok()
-    .flatten()
-    .unwrap_or_else(random_cat_fact);
+    let fact = tokio::time::timeout(FACT_FETCH_TIMEOUT, fetch_remote_tip(http_client_factory))
+        .await
+        .ok()
+        .flatten()
+        .unwrap_or_else(random_cat_fact);
     let _ = STARTUP_FACT.set(fact);
 }
 
 /// Return the fact selected during startup. Plan and Fast mode do not affect local tips.
 pub(crate) fn get_tooltip(_plan: Option<PlanType>, _fast_mode_enabled: bool) -> Option<String> {
-    Some(
-        STARTUP_FACT
-            .get()
-            .cloned()
-            .unwrap_or_else(random_cat_fact),
-    )
+    Some(STARTUP_FACT.get().cloned().unwrap_or_else(random_cat_fact))
 }
 
-async fn fetch_remote_fact(http_client_factory: HttpClientFactory) -> Option<String> {
+async fn fetch_remote_tip(http_client_factory: HttpClientFactory) -> Option<String> {
     let client = RouteAwareClientPool::new(http_client_factory, ClientRouteClass::Other);
-    let response = client.get(USELESS_FACT_URL).send().await.ok()?;
-    let fact = response
+    let mut rng = rand::rng();
+    if rng.random_bool(0.5) {
+        let response = client.get(USELESS_FACT_URL).send().await.ok()?;
+        let fact = response
+            .error_for_status()
+            .ok()?
+            .json::<UselessFactResponse>()
+            .await
+            .ok()?;
+        let text = fact.text.trim();
+        return (!text.is_empty()).then(|| text.to_string());
+    }
+
+    let response = client.get(JOKE_URL).send().await.ok()?;
+    let joke = response
         .error_for_status()
         .ok()?
-        .json::<UselessFactResponse>()
+        .json::<JokeResponse>()
         .await
         .ok()?;
-    let text = fact.text.trim();
+    let text = joke.joke.trim();
     (!text.is_empty()).then(|| text.to_string())
 }
 
@@ -107,5 +118,15 @@ mod tests {
         .expect("sample response should deserialize");
 
         assert_eq!(response.text, "Cats have 3 eyelids.");
+    }
+
+    #[test]
+    fn deserializes_the_remote_joke_shape() {
+        let response = serde_json::from_str::<JokeResponse>(
+            r#"{"error":false,"category":"Misc","type":"single","joke":"A joke."}"#,
+        )
+        .expect("sample response should deserialize");
+
+        assert_eq!(response.joke, "A joke.");
     }
 }
