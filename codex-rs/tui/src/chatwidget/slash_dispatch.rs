@@ -36,6 +36,7 @@ const SIDE_SLASH_COMMAND_UNAVAILABLE_HINT: &str =
     "Press Ctrl+C to return to the main thread first.";
 const GOAL_USAGE_HINT: &str = "Example: /goal improve benchmark coverage";
 const RAW_USAGE: &str = "Usage: /raw [on|off]";
+const AUTO_USAGE: &str = "Usage: /auto [on|off]";
 const USAGE_CHATGPT_LOGIN_REQUIRED: &str = "Sign in with ChatGPT to use /usage.";
 
 impl ChatWidget {
@@ -129,6 +130,37 @@ impl ChatWidget {
     fn emit_raw_output_mode_changed(&self, enabled: bool) {
         self.app_event_tx
             .send(AppEvent::RawOutputModeChanged { enabled });
+    }
+
+    fn set_auto_mode(&mut self, enabled: bool) {
+        let approval_policy = if enabled {
+            AskForApproval::Never
+        } else {
+            AskForApproval::OnRequest
+        };
+        self.submit_op(AppCommand::override_turn_context(
+            /*cwd*/ None,
+            Some(approval_policy),
+            /*approvals_reviewer*/ None,
+            /*permission_profile*/ None,
+            /*active_permission_profile*/ None,
+            /*windows_sandbox_level*/ None,
+            /*model*/ None,
+            /*effort*/ None,
+            /*summary*/ None,
+            /*service_tier*/ None,
+            /*collaboration_mode*/ None,
+            /*personality*/ None,
+        ));
+        self.set_approval_policy(approval_policy);
+        self.app_event_tx
+            .send(AppEvent::UpdateAskForApprovalPolicy(approval_policy));
+        let message = if enabled {
+            "Auto mode enabled: tool approvals are automatic for this session."
+        } else {
+            "Auto mode disabled: tool actions will ask for approval again."
+        };
+        self.add_info_message(message.to_string(), /*hint*/ None);
     }
 
     fn slash_command_blocked_by_active_task(&self, cmd: SlashCommand) -> bool {
@@ -313,6 +345,13 @@ impl ChatWidget {
             }
             SlashCommand::Agent | SlashCommand::MultiAgents => {
                 self.app_event_tx.send(AppEvent::OpenAgentPicker);
+            }
+            SlashCommand::Auto => {
+                let enabled = !matches!(
+                    AskForApproval::from(self.config.permissions.approval_policy.value()),
+                    AskForApproval::Never
+                );
+                self.set_auto_mode(enabled);
             }
             SlashCommand::Permissions => {
                 self.open_permissions_popup();
@@ -723,6 +762,11 @@ impl ChatWidget {
                 }
                 _ => self.add_error_message(RAW_USAGE.to_string()),
             },
+            SlashCommand::Auto => match trimmed.to_ascii_lowercase().as_str() {
+                "on" => self.set_auto_mode(/*enabled*/ true),
+                "off" => self.set_auto_mode(/*enabled*/ false),
+                _ => self.add_error_message(AUTO_USAGE.to_string()),
+            },
             SlashCommand::Rename if !trimmed.is_empty() => {
                 if !self.ensure_thread_rename_allowed() {
                     return;
@@ -1084,6 +1128,7 @@ impl ChatWidget {
             | SlashCommand::Rollout
             | SlashCommand::Copy
             | SlashCommand::Raw
+            | SlashCommand::Auto
             | SlashCommand::Vim
             | SlashCommand::Diff
             | SlashCommand::App

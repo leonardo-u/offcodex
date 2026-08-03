@@ -2894,7 +2894,6 @@ async fn raw_slash_command_toggles_and_accepts_on_off_args() {
             .iter()
             .any(|event| matches!(event, AppEvent::RawOutputModeChanged { enabled: false }))
     );
-
     chat.dispatch_command_with_args(SlashCommand::Raw, "on".to_string(), Vec::new());
     assert!(chat.raw_output_mode());
     let events = std::iter::from_fn(|| rx.try_recv().ok()).collect::<Vec<_>>();
@@ -2922,6 +2921,33 @@ async fn raw_slash_command_reports_usage_for_invalid_arg() {
         rendered.contains("Usage: /raw [on|off]"),
         "expected raw usage error, got {rendered:?}"
     );
+}
+
+#[tokio::test]
+async fn auto_slash_command_updates_approval_policy_without_restart() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+
+    chat.dispatch_command_with_args(SlashCommand::Auto, "on".to_string(), Vec::new());
+    assert_eq!(
+        AskForApproval::from(chat.config_ref().permissions.approval_policy.value()),
+        AskForApproval::Never
+    );
+    let events = std::iter::from_fn(|| rx.try_recv().ok()).collect::<Vec<_>>();
+    assert!(events.iter().any(|event| matches!(
+        event,
+        AppEvent::UpdateAskForApprovalPolicy(AskForApproval::Never)
+    )));
+
+    chat.dispatch_command_with_args(SlashCommand::Auto, "off".to_string(), Vec::new());
+    assert_eq!(
+        AskForApproval::from(chat.config_ref().permissions.approval_policy.value()),
+        AskForApproval::OnRequest
+    );
+    let events = std::iter::from_fn(|| rx.try_recv().ok()).collect::<Vec<_>>();
+    assert!(events.iter().any(|event| matches!(
+        event,
+        AppEvent::UpdateAskForApprovalPolicy(AskForApproval::OnRequest)
+    )));
 }
 
 #[tokio::test]
