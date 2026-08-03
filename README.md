@@ -10,7 +10,7 @@
 
 offcodex (Offline Codex) is a fork of Codex CLI designed to run coding agents primarily through local model providers. Its default provider is [Ollama](https://ollama.com/), with a default model of `qwen2.5:14b`.
 
-It is tuned for models such as `qwen2.5-coder:14b`, `hhao/qwen2.5-coder-tools:14b`, and compatible Qwen or DeepSeek models. The local agent loop includes a compact tool surface, explicit tool-use instructions, conservative coding sampling settings, and a parser fallback for models that return tool calls as JSON text instead of native function calls.
+It is tuned for models such as `qwen2.5-coder:14b`, `hhao/qwen2.5-coder-tools:14b`, and compatible Qwen or DeepSeek models. The local agent loop includes a compact tool surface, explicit tool-use instructions, conservative coding sampling settings, and a parser fallback for models that return tool calls as explicitly tagged JSON text instead of native function calls.
 
 Local models can inspect, create, edit, and patch files, and run terminal commands through the sandboxed tool runtime. The Linux startup check detects common Bubblewrap/user-namespace failures and offers approved repairs individually, either until reboot or permanently.
 
@@ -59,7 +59,7 @@ Start the agent with:
 offcodex
 ```
 
-Use `/model` to select any model installed in Ollama, and `/auto on` or `/auto off` to change tool-approval behavior without restarting the session.
+Use `/model` to select any model installed in Ollama, and `/auto on` or `/auto off` to change tool-approval behavior without restarting the session. `/auto off` is the cautious default: untrusted tool actions require your approval.
 
 <details>
 <summary>You can also go to the <a href="https://github.com/leonardo-u/offcodex/releases/latest">latest offcodex GitHub Release</a> and download the appropriate binary for your platform.</summary>
@@ -73,8 +73,10 @@ Release assets use the `offcodex-*` naming convention. If you download an archiv
 - Ollama is the default local provider; `--local-provider ollama` remains available for explicit use.
 - Requests use conservative local coding options (`temperature = 0.1`, `num_ctx = 16384`).
 - Tool calls are validated and malformed JSON is returned to the model with a correction request instead of crashing the session.
+- When `/model` switches an Ollama model, offcodex visibly reads its `/api/show` template and reports the explicit textual tool-call wrapper it declares. Native function calling is still preferred.
+- The textual fallback accepts only explicit template wrappers such as `<tool_call>…</tool_call>`, `<function_call>…</function_call>`, and `<tools>…</tools>`. A bare JSON snippet in normal assistant prose is never executed as a command.
 - For local models, offcodex exposes a small, reliable baseline of file, patch, terminal, and web tools rather than overwhelming the model with every available integration.
-- Commands still run in the configured sandbox and retain normal approval controls.
+- Commands still run in the configured sandbox and retain normal approval controls; `/auto off` asks before untrusted mutations, while `/auto on` enables autonomous execution.
 
 ## Docs
 

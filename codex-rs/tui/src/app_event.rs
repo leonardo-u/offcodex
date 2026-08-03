@@ -806,6 +806,12 @@ pub(crate) enum AppEvent {
     /// Update the current model slug in the running app and widget.
     UpdateModel(String),
 
+    /// Result of reading a selected Ollama model's explicit tool-call template.
+    OllamaToolCallProfileLoaded {
+        model: String,
+        result: std::result::Result<Vec<String>, String>,
+    },
+
     /// Update the current personality in the running app and widget.
     UpdatePersonality(Personality),
 

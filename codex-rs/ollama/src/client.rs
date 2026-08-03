@@ -36,6 +36,12 @@ pub struct OllamaClient {
     uses_openai_compat: bool,
 }
 
+/// Tool-call wrappers advertised by an Ollama model template.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ToolCallProfile {
+    pub wrappers: Vec<String>,
+}
+
 impl OllamaClient {
     /// Construct a client for the built‑in open‑source ("oss") model provider
     /// and verify that a local Ollama server is reachable. If no server is
@@ -152,6 +158,33 @@ impl OllamaClient {
             })
             .unwrap_or_default();
         Ok(names)
+    }
+
+    /// Read the model template and report the explicit textual tool-call wrappers it declares.
+    pub async fn fetch_tool_call_profile(&self, model: &str) -> io::Result<ToolCallProfile> {
+        let show_url = format!("{}/api/show", self.host_root.trim_end_matches('/'));
+        let resp = self
+            .client
+            .post(show_url)
+            .json(&serde_json::json!({"name": model}))
+            .send()
+            .await
+            .map_err(io::Error::other)?;
+        if !resp.status().is_success() {
+            return Err(io::Error::other(format!(
+                "Ollama could not inspect model `{model}`: HTTP {}",
+                resp.status()
+            )));
+        }
+        let value = resp.json::<JsonValue>().await.map_err(io::Error::other)?;
+        let template = value
+            .get("template")
+            .or_else(|| value.get("modelfile"))
+            .and_then(JsonValue::as_str)
+            .unwrap_or_default();
+        Ok(ToolCallProfile {
+            wrappers: tool_call_wrappers_in_template(template),
+        })
     }
 
     /// Query the server for its version string, returning `None` when unavailable.
@@ -288,11 +321,33 @@ impl OllamaClient {
     }
 }
 
+fn tool_call_wrappers_in_template(template: &str) -> Vec<String> {
+    [
+        ("<tool_call>", "</tool_call>", "<tool_call>"),
+        ("<function_call>", "</function_call>", "<function_call>"),
+        ("<tools>", "</tools>", "<tools>"),
+    ]
+    .into_iter()
+    .filter(|(open, close, _)| template.contains(open) && template.contains(close))
+    .map(|(_, _, name)| name.to_string())
+    .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use assert_matches::assert_matches;
     use pretty_assertions::assert_eq;
+
+    #[test]
+    fn finds_explicit_tool_call_wrappers_in_a_model_template() {
+        let template = "Use <tool_call>{...}</tool_call>, not a bare JSON object.";
+
+        assert_eq!(
+            tool_call_wrappers_in_template(template),
+            vec!["<tool_call>".to_string()]
+        );
+    }
 
     // Happy-path tests using a mock HTTP server; skip if sandbox network is disabled.
     #[tokio::test]

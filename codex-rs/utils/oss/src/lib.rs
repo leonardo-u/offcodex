@@ -53,6 +53,21 @@ pub async fn local_provider_models(
     }
 }
 
+/// Return explicit textual tool-call wrappers declared by the selected local model.
+pub async fn local_provider_tool_call_profile(
+    provider_id: &str,
+    config: &Config,
+    model: &str,
+) -> Result<Vec<String>, std::io::Error> {
+    match provider_id {
+        OLLAMA_OSS_PROVIDER_ID => {
+            let client = codex_ollama::OllamaClient::try_from_oss_provider(config).await?;
+            Ok(client.fetch_tool_call_profile(model).await?.wrappers)
+        }
+        _ => Ok(Vec::new()),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

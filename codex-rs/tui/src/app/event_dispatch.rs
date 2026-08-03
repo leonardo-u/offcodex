@@ -11,6 +11,8 @@ use crate::config_update::format_config_error;
 use crate::external_agent_config_migration::flow::ExternalAgentConfigMigrationFlowOutcome;
 #[cfg(target_os = "windows")]
 use codex_config::types::WindowsSandboxModeToml;
+use codex_model_provider_info::OLLAMA_OSS_PROVIDER_ID;
+use codex_utils_oss::local_provider_tool_call_profile;
 use std::process::Command;
 
 const SHUTDOWN_FIRST_EXIT_TIMEOUT: Duration = Duration::from_secs(/*secs*/ 2);
@@ -1242,11 +1244,46 @@ impl App {
             }
             AppEvent::UpdateModel(model) => {
                 self.chat_widget.set_model(&model);
+                if self.config.model_provider_id == OLLAMA_OSS_PROVIDER_ID {
+                    self.chat_widget.add_info_message(
+                        format!("Querying Ollama for the tool-call profile of `{model}`…"),
+                        /*hint*/ None,
+                    );
+                    let config = self.config.clone();
+                    let app_event_tx = self.app_event_tx.clone();
+                    tokio::spawn(async move {
+                        let result = local_provider_tool_call_profile(
+                            OLLAMA_OSS_PROVIDER_ID,
+                            &config,
+                            &model,
+                        )
+                        .await
+                        .map_err(|error| error.to_string());
+                        app_event_tx.send(AppEvent::OllamaToolCallProfileLoaded { model, result });
+                    });
+                }
                 self.sync_active_thread_model_setting(app_server, model)
                     .await;
                 self.sync_active_thread_service_tier_to_cached_session()
                     .await;
             }
+            AppEvent::OllamaToolCallProfileLoaded { model, result } => match result {
+                Ok(wrappers) if wrappers.is_empty() => self.chat_widget.add_warning_message(
+                    format!(
+                        "Ollama did not declare a textual tool-call wrapper for `{model}`. Native function calling remains available; untagged JSON will not run as a command."
+                    ),
+                ),
+                Ok(wrappers) => self.chat_widget.add_info_message(
+                    format!(
+                        "Ollama tool-call profile for `{model}`: {}. Native function calling remains preferred.",
+                        wrappers.join(", ")
+                    ),
+                    /*hint*/ None,
+                ),
+                Err(error) => self.chat_widget.add_warning_message(format!(
+                    "Could not read the Ollama tool-call profile for `{model}`: {error}. Native function calling remains available; untagged JSON will not run as a command."
+                )),
+            },
             AppEvent::UpdatePersonality(personality) => {
                 self.on_update_personality(personality);
                 self.sync_active_thread_personality_setting(app_server, personality)
