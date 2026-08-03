@@ -72,6 +72,7 @@ Release assets use the `offcodex-*` naming convention. If you download an archiv
 
 - Ollama is the default local provider; `--local-provider ollama` remains available for explicit use.
 - Requests use conservative local coding options (`temperature = 0.1`, `num_ctx = 16384`).
+- Startup displays one harmless fact instead of a cloud-provider promotion: it requests a random fact from `uselessfacts.jsph.pl` with a short timeout, then falls back to a bundled random cat fact when offline.
 - Tool calls are validated and malformed JSON is returned to the model with a correction request instead of crashing the session.
 - When `/model` switches an Ollama model, offcodex visibly reads its `/api/show` template and reports the explicit textual tool-call wrapper it declares. Native function calling is still preferred.
 - The textual fallback accepts only explicit template wrappers such as `<tool_call>…</tool_call>`, `<function_call>…</function_call>`, and `<tools>…</tools>`. A bare JSON snippet in normal assistant prose is never executed as a command.
