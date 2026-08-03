@@ -13,7 +13,7 @@ pub use pull::TuiProgressReporter;
 use semver::Version;
 
 /// Default OSS model to use when `--oss` is passed without an explicit `-m`.
-pub const DEFAULT_OSS_MODEL: &str = "gpt-oss:20b";
+pub const DEFAULT_OSS_MODEL: &str = "qwen2.5:14b";
 
 /// Prepare the local OSS environment when `--oss` is selected.
 ///
@@ -44,7 +44,7 @@ pub async fn ensure_oss_ready(config: &Config, client: &OllamaClient) -> std::io
 }
 
 fn min_responses_version() -> Version {
-    Version::new(0, 13, 4)
+    Version::new(0, 13, 3)
 }
 
 fn supports_responses(version: &Version) -> bool {
@@ -93,7 +93,7 @@ mod tests {
             .and(wiremock::matchers::path("/api/tags"))
             .respond_with(
                 wiremock::ResponseTemplate::new(200)
-                    .set_body_json(serde_json::json!({"models": [{"name": "gpt-oss:20b"}]})),
+                    .set_body_json(serde_json::json!({"models": [{"name": "qwen2.5:14b"}]})),
             )
             .expect(2)
             .mount(&server)
@@ -121,7 +121,7 @@ mod tests {
             .expect("version check should reuse the existing client");
         assert_eq!(
             client.fetch_models().await.expect("fetch models"),
-            vec!["gpt-oss:20b"]
+            vec!["qwen2.5:14b"]
         );
 
         server.verify().await;
@@ -134,12 +134,12 @@ mod tests {
 
     #[test]
     fn does_not_support_responses_before_cutoff() {
-        assert!(!supports_responses(&Version::new(0, 13, 3)));
+        assert!(!supports_responses(&Version::new(0, 13, 2)));
     }
 
     #[test]
     fn supports_responses_at_or_after_cutoff() {
-        assert!(supports_responses(&Version::new(0, 13, 4)));
+        assert!(supports_responses(&Version::new(0, 13, 3)));
         assert!(supports_responses(&Version::new(0, 14, 0)));
     }
 }

@@ -85,6 +85,7 @@ use codex_memories_read::memory_root;
 use codex_model_provider_info::LEGACY_OLLAMA_CHAT_PROVIDER_ID;
 use codex_model_provider_info::ModelProviderInfo;
 use codex_model_provider_info::OLLAMA_CHAT_PROVIDER_REMOVED_ERROR;
+use codex_model_provider_info::OLLAMA_OSS_PROVIDER_ID;
 use codex_model_provider_info::built_in_model_providers;
 use codex_model_provider_info::merge_configured_model_providers;
 use codex_models_manager::ModelsManagerConfig;
@@ -2593,7 +2594,10 @@ pub fn resolve_oss_provider(
         // Explicit provider specified (e.g., via --local-provider)
         Some(provider.to_string())
     } else {
-        config_toml.oss_provider.clone()
+        config_toml
+            .oss_provider
+            .clone()
+            .or_else(|| Some(OLLAMA_OSS_PROVIDER_ID.to_string()))
     }
 }
 

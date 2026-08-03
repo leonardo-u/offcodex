@@ -5,6 +5,8 @@ use codex_protocol::openai_models::ModelInfo;
 use codex_protocol::openai_models::ModelInstructionsVariables;
 use codex_protocol::openai_models::ModelMessages;
 use codex_protocol::openai_models::ModelVisibility;
+use codex_protocol::openai_models::ReasoningEffort;
+use codex_protocol::openai_models::ReasoningEffortPreset;
 use codex_protocol::openai_models::TruncationMode;
 use codex_protocol::openai_models::TruncationPolicyConfig;
 use codex_protocol::openai_models::WebSearchToolType;
@@ -126,6 +128,10 @@ fn clear_instruction_messages(model: &mut ModelInfo) {
 /// Build a minimal fallback model descriptor for missing/unknown slugs.
 pub fn model_info_from_slug(slug: &str) -> ModelInfo {
     warn!("Unknown model {slug} is used. This will use fallback model metadata.");
+    model_info_from_slug_with_fallback(slug, /*used_fallback_model_metadata*/ true)
+}
+
+fn model_info_from_slug_with_fallback(slug: &str, used_fallback_model_metadata: bool) -> ModelInfo {
     ModelInfo {
         slug: slug.to_string(),
         display_name: slug.to_string(),
@@ -160,13 +166,35 @@ pub fn model_info_from_slug(slug: &str) -> ModelInfo {
         effective_context_window_percent: 95,
         experimental_supported_tools: Vec::new(),
         input_modalities: default_input_modalities(),
-        used_fallback_model_metadata: true, // this is the fallback model metadata
+        used_fallback_model_metadata,
         supports_search_tool: false,
         use_responses_lite: false,
         auto_review_model_override: None,
         tool_mode: None,
         multi_agent_version: None,
     }
+}
+
+/// Build metadata for a model discovered from a local provider such as Ollama.
+///
+/// The descriptor is deliberately conservative: local model names are accepted
+/// as-is and the usable context is capped at 16K tokens.
+pub fn model_info_from_local_slug(slug: &str, priority: i32) -> ModelInfo {
+    let mut model =
+        model_info_from_slug_with_fallback(slug, /*used_fallback_model_metadata*/ false);
+    model.priority = priority;
+    model.visibility = ModelVisibility::List;
+    model.default_reasoning_level = Some(ReasoningEffort::None);
+    model.supported_reasoning_levels = vec![ReasoningEffortPreset {
+        effort: ReasoningEffort::None,
+        description: "No reasoning".to_string(),
+    }];
+    model.context_window = Some(16_384);
+    model.max_context_window = Some(16_384);
+    model.supports_reasoning_summary_parameter = false;
+    model.default_reasoning_summary = ReasoningSummary::None;
+    model.used_fallback_model_metadata = false;
+    model
 }
 
 fn local_personality_messages_for_slug(slug: &str) -> Option<ModelMessages> {

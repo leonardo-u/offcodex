@@ -108,6 +108,7 @@ use codex_app_server_protocol::TurnStartResponse;
 use codex_app_server_protocol::TurnSteerParams;
 use codex_app_server_protocol::TurnSteerResponse;
 use codex_app_server_protocol::UserInput;
+use codex_model_provider_info::OLLAMA_OSS_PROVIDER_ID;
 use codex_otel::TelemetryAuthMode;
 use codex_protocol::ThreadId;
 use codex_protocol::approvals::GuardianAssessmentEvent;
@@ -301,6 +302,39 @@ impl AppServerSession {
 
     pub(crate) async fn bootstrap(&mut self, config: &Config) -> Result<AppServerBootstrap> {
         let started_at = Instant::now();
+        if config.model_provider_id == OLLAMA_OSS_PROVIDER_ID {
+            let available_models: Vec<ModelPreset> = config
+                .model_catalog
+                .as_ref()
+                .map(|catalog| {
+                    catalog
+                        .models
+                        .clone()
+                        .into_iter()
+                        .map(ModelPreset::from)
+                        .collect()
+                })
+                .unwrap_or_default();
+            let default_model = config
+                .model
+                .clone()
+                .or_else(|| available_models.first().map(|model| model.model.clone()))
+                .unwrap_or_else(|| "qwen2.5:14b".to_string());
+            self.default_model = Some(default_model.clone());
+            self.available_models = available_models.clone();
+            return Ok(AppServerBootstrap {
+                duration: started_at.elapsed(),
+                account_email: None,
+                auth_mode: None,
+                status_account_display: None,
+                plan_type: None,
+                requires_openai_auth: false,
+                default_model,
+                feedback_audience: FeedbackAudience::External,
+                has_chatgpt_account: false,
+                available_models,
+            });
+        }
         let account = self.read_account().await?;
         // `hooks/list` holds the global config queue during startup. Submit models and config
         // requirements together so an uncached model fetch can overlap both config requests.

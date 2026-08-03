@@ -213,6 +213,7 @@ struct ModelClientState {
     disable_websockets: AtomicBool,
     agent_identity_session_fallback: AgentIdentitySessionFallback,
     cached_websocket_session: StdMutex<WebsocketSession>,
+    is_ollama: bool,
 }
 
 /// Resolved API client setup for a single request attempt.
@@ -323,6 +324,8 @@ fn responses_request_properties_match(
         prompt_cache_key: previous_prompt_cache_key,
         text: previous_text,
         client_metadata: _,
+        temperature: previous_temperature,
+        ollama_options: previous_ollama_options,
     } = previous;
     let ResponsesApiRequest {
         model: current_model,
@@ -340,6 +343,8 @@ fn responses_request_properties_match(
         prompt_cache_key: current_prompt_cache_key,
         text: current_text,
         client_metadata: _,
+        temperature: current_temperature,
+        ollama_options: current_ollama_options,
     } = current;
 
     previous_model == current_model
@@ -356,6 +361,8 @@ fn responses_request_properties_match(
         && previous_service_tier == current_service_tier
         && previous_prompt_cache_key == current_prompt_cache_key
         && previous_text == current_text
+        && previous_temperature == current_temperature
+        && previous_ollama_options == current_ollama_options
 }
 
 fn response_items_equal_ignoring_internal_metadata(
@@ -439,6 +446,10 @@ impl ModelClient {
         attestation_provider: Option<Arc<dyn AttestationProvider>>,
         http_client_factory: HttpClientFactory,
     ) -> Self {
+        let is_ollama = provider_info
+            .base_url
+            .as_deref()
+            .is_some_and(|base_url| base_url.contains(":11434"));
         let model_provider = create_model_provider(provider_info, auth_manager);
         let codex_api_key_env_enabled = model_provider
             .auth_manager()
@@ -464,6 +475,7 @@ impl ModelClient {
                 disable_websockets: AtomicBool::new(false),
                 agent_identity_session_fallback: AgentIdentitySessionFallback::default(),
                 cached_websocket_session: StdMutex::new(WebsocketSession::default()),
+                is_ollama,
             }),
             agent_identity_policy,
             prompt_cache_key_override: None,
@@ -921,6 +933,11 @@ impl ModelClient {
             store: provider.is_azure_responses_endpoint(),
             stream: true,
             stream_options,
+            temperature: self.state.is_ollama.then_some(0.1),
+            ollama_options: self
+                .state
+                .is_ollama
+                .then(|| serde_json::json!({"num_ctx": 16_384})),
             include,
             service_tier,
             prompt_cache_key,

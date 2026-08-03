@@ -9759,10 +9759,10 @@ fn test_resolve_oss_provider_from_global_config() {
 }
 
 #[test]
-fn test_resolve_oss_provider_none_when_not_configured() {
+fn test_resolve_oss_provider_defaults_to_ollama() {
     let config_toml = ConfigToml::default();
     let result = resolve_oss_provider(/*explicit_provider*/ None, &config_toml);
-    assert_eq!(result, None);
+    assert_eq!(result, Some(OLLAMA_OSS_PROVIDER_ID.to_string()));
 }
 
 #[test]

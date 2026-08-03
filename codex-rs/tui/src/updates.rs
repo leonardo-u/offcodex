@@ -29,7 +29,8 @@ pub fn get_upgrade_version(config: &Config) -> Option<String> {
         return None;
     }
 
-    let action = update_action::get_update_action();
+    // offcodex is installed from its fork-specific script, so never invoke an upstream package updater.
+    let action = None;
     let version_file = version_filepath(config);
     let info = read_version_info(&version_file).ok();
 
@@ -59,7 +60,7 @@ pub fn get_upgrade_version(config: &Config) -> Option<String> {
 
 // We use the latest version from the cask if installation is via homebrew - homebrew does not immediately pick up the latest release and can lag behind.
 const HOMEBREW_CASK_API_URL: &str = "https://formulae.brew.sh/api/cask/codex.json";
-const LATEST_RELEASE_URL: &str = "https://api.github.com/repos/openai/codex/releases/latest";
+const LATEST_RELEASE_URL: &str = "https://api.github.com/repos/leonardo-u/offcodex/releases/latest";
 
 #[derive(Deserialize, Debug, Clone)]
 struct ReleaseInfo {

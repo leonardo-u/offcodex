@@ -943,6 +943,8 @@ mod tests {
             store: false,
             stream: true,
             stream_options: None,
+            temperature: None,
+            ollama_options: None,
             include: vec!["reasoning.encrypted_content".to_string()],
             service_tier: Some("priority".to_string()),
             prompt_cache_key: Some("cache-key".to_string()),

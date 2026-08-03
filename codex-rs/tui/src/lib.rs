@@ -51,6 +51,7 @@ use codex_login::AuthRouteConfig;
 use codex_login::default_client::originator;
 use codex_login::default_client::set_default_client_residency_requirement;
 use codex_login::enforce_login_restrictions;
+use codex_model_provider_info::OLLAMA_OSS_PROVIDER_ID;
 use codex_protocol::ThreadId;
 use codex_protocol::auth::AuthMode;
 use codex_protocol::config_types::AltScreenMode;
@@ -65,6 +66,7 @@ use codex_utils_absolute_path::canonicalize_existing_preserving_symlinks;
 use codex_utils_home_dir::find_codex_home;
 use codex_utils_oss::ensure_oss_provider_ready;
 use codex_utils_oss::get_default_model_for_oss_provider;
+use codex_utils_oss::local_provider_models;
 use color_eyre::eyre::WrapErr;
 use cwd_prompt::CwdPromptAction;
 pub use session_archive_commands::DeleteConfirmation;
@@ -931,7 +933,7 @@ pub async fn run_main(
     }
 
     // When using `--oss`, let the bootstrapper pick the model (defaulting to
-    // gpt-oss:20b) and ensure it is present locally. Also, force the built‑in
+    // qwen2.5:14b) and ensure it is present locally. Also, force the built‑in
     let raw_overrides = cli.config_overrides.raw_overrides.clone();
     // `oss` model provider.
     let overrides_cli = codex_utils_cli::CliConfigOverrides { raw_overrides };
@@ -1049,8 +1051,10 @@ pub async fn run_main(
         cwd.clone()
     };
 
+    let use_oss = true;
+    let local_tool_instructions = "Use exec_command for all repository inspection, file creation, file edits, and command execution. Do not present code or file contents in chat when you can act. A successful tool result is required before claiming that an action completed. If essential details are missing, stop and ask the user one concise question in chat before taking action.".to_string();
     let mut manually_selected_oss_provider = None;
-    let model_provider_override = if cli.oss {
+    let model_provider_override = if use_oss {
         let bootstrap_config_with_cloud_config;
         let config_toml_for_oss = if cli.oss_provider.is_none() {
             // The first load intentionally skips cloud config so we can read
@@ -1095,7 +1099,7 @@ pub async fn run_main(
     // When using `--oss`, let the bootstrapper pick the model based on selected provider
     let model = if let Some(model) = &cli.model {
         Some(model.clone())
-    } else if cli.oss {
+    } else if use_oss {
         // Use the provider from model_provider_override
         model_provider_override
             .as_ref()
@@ -1116,13 +1120,14 @@ pub async fn run_main(
         codex_self_exe: arg0_paths.codex_self_exe.clone(),
         codex_linux_sandbox_exe: arg0_paths.codex_linux_sandbox_exe.clone(),
         main_execve_wrapper_exe: arg0_paths.main_execve_wrapper_exe.clone(),
-        show_raw_agent_reasoning: cli.oss.then_some(true),
+        developer_instructions: Some(local_tool_instructions),
+        show_raw_agent_reasoning: use_oss.then_some(true),
         bypass_hook_trust: cli.bypass_hook_trust.then_some(true),
         additional_writable_roots: additional_dirs,
         ..Default::default()
     };
 
-    let config = load_config_or_exit(
+    let mut config = load_config_or_exit(
         cli_kv_overrides.clone(),
         overrides.clone(),
         loader_overrides.clone(),
@@ -1262,7 +1267,7 @@ pub async fn run_main(
     let feedback_layer = feedback.logger_layer();
     let feedback_metadata_layer = feedback.metadata_layer();
 
-    if cli.oss && model_provider_override.is_some() {
+    if use_oss && model_provider_override.is_some() {
         // We're in the oss section, so provider_id should be Some
         // Let's handle None case gracefully though just in case
         let provider_id = match model_provider_override.as_ref() {
@@ -1275,6 +1280,19 @@ pub async fn run_main(
             }
         };
         ensure_oss_provider_ready(provider_id, &config).await?;
+        let models = local_provider_models(provider_id, &config).await?;
+        config.model_catalog = Some(codex_protocol::openai_models::ModelsResponse {
+            models: models
+                .iter()
+                .enumerate()
+                .map(|(priority, model)| {
+                    codex_models_manager::model_info::model_info_from_local_slug(
+                        model,
+                        i32::try_from(priority).unwrap_or(i32::MAX),
+                    )
+                })
+                .collect(),
+        });
     }
 
     let otel_logger_layer = otel.as_ref().and_then(|o| o.logger_layer());
@@ -1362,7 +1380,9 @@ async fn run_ratatui_app(
     {
         use crate::update_prompt::UpdatePromptOutcome;
 
-        let skip_update_prompt = cli.prompt.as_ref().is_some_and(|prompt| !prompt.is_empty());
+        let skip_update_prompt = cli.prompt.as_ref().is_some_and(|prompt| !prompt.is_empty())
+            || overrides.model_provider.as_deref() == Some(OLLAMA_OSS_PROVIDER_ID)
+            || initial_config.model_provider_id == OLLAMA_OSS_PROVIDER_ID;
         if !skip_update_prompt {
             match update_prompt::run_update_prompt_if_needed(&mut tui, &initial_config).await? {
                 UpdatePromptOutcome::Continue => {}

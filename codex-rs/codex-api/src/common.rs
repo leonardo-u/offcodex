@@ -262,6 +262,10 @@ pub struct ResponsesApiRequest {
     pub store: bool,
     pub stream: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub temperature: Option<f64>,
+    #[serde(rename = "options", skip_serializing_if = "Option::is_none")]
+    pub ollama_options: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub stream_options: Option<StreamOptions>,
     pub include: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -287,6 +291,8 @@ impl<'a> From<&'a ResponsesApiRequest> for ResponseCreateWsRequest<'a> {
             reasoning: request.reasoning.as_ref(),
             store: request.store,
             stream: request.stream,
+            temperature: request.temperature,
+            ollama_options: request.ollama_options.as_ref(),
             stream_options: request.stream_options.as_ref(),
             include: &request.include,
             service_tier: request.service_tier.as_deref(),
@@ -313,6 +319,10 @@ pub struct ResponseCreateWsRequest<'a> {
     pub reasoning: Option<&'a Reasoning>,
     pub store: bool,
     pub stream: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub temperature: Option<f64>,
+    #[serde(rename = "options", skip_serializing_if = "Option::is_none")]
+    pub ollama_options: Option<&'a serde_json::Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub stream_options: Option<&'a StreamOptions>,
     pub include: &'a [String],

@@ -35,7 +35,22 @@ pub async fn ensure_oss_provider_ready(
             // Unknown provider, skip setup
         }
     }
+
     Ok(())
+}
+
+/// Return model names installed in the selected local provider.
+pub async fn local_provider_models(
+    provider_id: &str,
+    config: &Config,
+) -> Result<Vec<String>, std::io::Error> {
+    match provider_id {
+        OLLAMA_OSS_PROVIDER_ID => {
+            let client = codex_ollama::OllamaClient::try_from_oss_provider(config).await?;
+            client.fetch_models().await
+        }
+        _ => Ok(Vec::new()),
+    }
 }
 
 #[cfg(test)]
