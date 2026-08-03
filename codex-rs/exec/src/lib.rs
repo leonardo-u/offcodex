@@ -262,7 +262,7 @@ pub async fn run_main(cli: Cli, arg0_paths: Arg0DispatchPaths) -> anyhow::Result
     let SharedCliOptions {
         images,
         model: model_cli_arg,
-        oss,
+        oss: _,
         oss_provider,
         config_profile_v2,
         sandbox_mode: sandbox_mode_cli_arg,
@@ -272,6 +272,7 @@ pub async fn run_main(cli: Cli, arg0_paths: Arg0DispatchPaths) -> anyhow::Result
         cwd,
         add_dir,
     } = shared;
+    let use_oss = true;
 
     let (_stdout_with_ansi, stderr_with_ansi) = match color {
         cli::Color::Always => (true, true),
@@ -368,7 +369,7 @@ pub async fn run_main(cli: Cli, arg0_paths: Arg0DispatchPaths) -> anyhow::Result
     let run_loader_overrides = loader_overrides.clone();
     let run_cloud_config_bundle = cloud_config_bundle.clone();
 
-    let model_provider = if oss {
+    let model_provider = if use_oss {
         let bootstrap_config_with_cloud_config;
         let config_toml_for_oss = if oss_provider.is_none() {
             // The first load intentionally skips cloud config so we can read
@@ -404,7 +405,7 @@ pub async fn run_main(cli: Cli, arg0_paths: Arg0DispatchPaths) -> anyhow::Result
     // When using `--oss`, let the bootstrapper pick the model based on selected provider
     let model = if let Some(model) = model_cli_arg {
         Some(model)
-    } else if oss {
+    } else if use_oss {
         model_provider
             .as_ref()
             .and_then(|provider_id| get_default_model_for_oss_provider(provider_id))
@@ -413,6 +414,7 @@ pub async fn run_main(cli: Cli, arg0_paths: Arg0DispatchPaths) -> anyhow::Result
         None // No model specified, will use the default.
     };
 
+    let local_tool_instructions = "Use tools for all repository changes. Do not present code, patches, or file contents in chat when you can act: read files first, edit them with apply_patch, and run commands with exec. Tool calls must be valid JSON. If a tool call fails, inspect its output and correct it with another tool call.".to_string();
     let overrides = ConfigOverrides {
         model,
         review_model: None,
@@ -432,10 +434,10 @@ pub async fn run_main(cli: Cli, arg0_paths: Arg0DispatchPaths) -> anyhow::Result
         main_execve_wrapper_exe: arg0_paths.main_execve_wrapper_exe.clone(),
         default_zsh_path: None,
         base_instructions: None,
-        developer_instructions: None,
+        developer_instructions: Some(local_tool_instructions),
         personality: None,
         compact_prompt: None,
-        show_raw_agent_reasoning: oss.then_some(true),
+        show_raw_agent_reasoning: use_oss.then_some(true),
         tools_web_search_request: None,
         ephemeral: ephemeral.then_some(true),
         bypass_hook_trust: bypass_hook_trust.then_some(true),
@@ -587,7 +589,7 @@ pub async fn run_main(cli: Cli, arg0_paths: Arg0DispatchPaths) -> anyhow::Result
         json_mode,
         last_message_file,
         model_provider,
-        oss,
+        oss: use_oss,
         output_schema_path,
         prompt,
         skip_git_repo_check,

@@ -80,6 +80,7 @@ use codex_features::Feature;
 use codex_file_system::FindUpErrorPolicy;
 use codex_file_system::find_nearest_ancestor_with_markers;
 use codex_login::CodexAuth;
+use codex_model_provider_info::OLLAMA_OSS_PROVIDER_ID;
 use codex_protocol::ResponseItemId;
 use codex_protocol::config_types::AutoCompactTokenLimitScope;
 use codex_protocol::config_types::ModeKind;
@@ -1281,9 +1282,34 @@ pub(crate) fn build_prompt(
     turn_context: &TurnContext,
     base_instructions: BaseInstructions,
 ) -> Prompt {
+    let mut tools = router.model_visible_specs();
+    let mut base_instructions = base_instructions;
+    if turn_context.config.model_provider_id == OLLAMA_OSS_PROVIDER_ID && !tools.is_empty() {
+        // Local models work more reliably with a compact, direct tool surface.
+        tools.retain(|tool| {
+            matches!(
+                tool.name(),
+                "exec_command" | "write_stdin" | "apply_patch" | "view_image" | "web"
+            )
+        });
+        let tool_names = tools
+            .iter()
+            .map(codex_tools::ToolSpec::name)
+            .collect::<Vec<_>>()
+            .join(", ");
+        base_instructions.text.push_str("
+
+# Local tool use
+The tool schemas supplied in the tools API field are authoritative. For any repository inspection, file creation or edit, or command execution, call the appropriate tool before replying. Do not provide a plan, patch, or code block instead of executing a tool. If a tool call fails, use its error output to make a corrected tool call. Never claim that a file was created or a command ran unless the tool result confirms it. For shell commands, use exec_command with arguments {\"cmd\":\"COMMAND\"}. If native function calling is unavailable, reply with only <tools>{\"name\":\"exec_command\",\"arguments\":{\"cmd\":\"COMMAND\"}}</tools>. Never use prose for a tool call. If essential details are missing, stop and ask the user one concise question in chat before taking action. For focused edits, apply_patch is available but it is freeform; use exec_command for simple file operations. Available tool names: ");
+        base_instructions.text.push_str(&tool_names);
+        base_instructions.text.push_str(
+            "
+",
+        );
+    }
     Prompt {
         input,
-        tools: router.model_visible_specs(),
+        tools,
         parallel_tool_calls: turn_context.model_info.supports_parallel_tool_calls,
         base_instructions,
         output_schema: turn_context.final_output_json_schema.clone(),

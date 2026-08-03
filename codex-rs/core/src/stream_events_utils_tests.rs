@@ -1,6 +1,7 @@
 use super::HandleOutputCtx;
 use super::TurnItemContributorPolicy;
 use super::completed_item_defers_mailbox_delivery_to_next_turn;
+use super::convert_ollama_text_tool_call;
 use super::finalize_non_tool_response_item;
 use super::handle_non_tool_response_item;
 use super::handle_output_item_done;
@@ -43,6 +44,26 @@ fn assistant_output_text_with_phase(text: &str, phase: Option<MessagePhase>) -> 
         phase,
         internal_chat_message_metadata_passthrough: None,
     }
+}
+
+#[test]
+fn converts_ollama_tools_tag_to_function_call() {
+    let converted = convert_ollama_text_tool_call(assistant_output_text(
+        r#"<tools>{"name":"exec_command","arguments":{"cmd":"printf pippo > esempio.txt"}}</tools>"#,
+    ));
+
+    assert!(matches!(
+        converted,
+        ResponseItem::FunctionCall { name, arguments, .. }
+            if name == "exec_command" && arguments == r#"{"cmd":"printf pippo > esempio.txt"}"#
+    ));
+}
+
+#[test]
+fn leaves_non_tool_json_as_assistant_text() {
+    let item = assistant_output_text(r#"{"name":"exec_command","arguments":"not-an-object"}"#);
+
+    assert_eq!(convert_ollama_text_tool_call(item.clone()), item);
 }
 
 #[test]

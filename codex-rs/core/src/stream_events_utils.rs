@@ -2,6 +2,7 @@ use std::pin::Pin;
 use std::sync::Arc;
 
 use codex_extension_api::ExtensionData;
+use codex_model_provider_info::OLLAMA_OSS_PROVIDER_ID;
 use codex_protocol::ResponseItemId;
 use codex_protocol::config_types::ModeKind;
 use codex_protocol::items::TurnItem;
@@ -31,6 +32,7 @@ use futures::Future;
 use tracing::debug;
 use tracing::instrument;
 use tracing::warn;
+use uuid::Uuid;
 
 fn strip_hidden_assistant_markup(text: &str, plan_mode: bool) -> String {
     let (without_citations, _) = strip_citations(text);
@@ -71,6 +73,56 @@ pub(crate) fn raw_assistant_output_text_from_item(item: &ResponseItem) -> Option
         return Some(combined);
     }
     None
+}
+
+/// Converts Ollama models' textual function-call fallback into a Responses function call.
+///
+/// Some local models return a complete JSON object in assistant text even when the API advertises
+/// function calling. Accept only the exact `{ "name": ..., "arguments": {...} }` shape so normal
+/// assistant JSON remains visible text instead of being executed.
+pub(crate) fn convert_ollama_text_tool_call(item: ResponseItem) -> ResponseItem {
+    let Some(text) = raw_assistant_output_text_from_item(&item) else {
+        return item;
+    };
+    let text = text.trim();
+    let text = text
+        .strip_prefix("<tools>")
+        .and_then(|text| text.trim().strip_suffix("</tools>"))
+        .map(str::trim)
+        .unwrap_or(text);
+    let text = text
+        .strip_prefix("```json")
+        .or_else(|| text.strip_prefix("```"))
+        .and_then(|text| text.trim().strip_suffix("```"))
+        .map(str::trim)
+        .unwrap_or(text);
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(text) else {
+        return item;
+    };
+    let Some(object) = value.as_object() else {
+        return item;
+    };
+    if object.len() != 2 {
+        return item;
+    }
+    let (Some(name), Some(arguments)) = (
+        object.get("name").and_then(serde_json::Value::as_str),
+        object
+            .get("arguments")
+            .and_then(|value| value.is_object().then_some(value)),
+    ) else {
+        return item;
+    };
+
+    ResponseItem::FunctionCall {
+        id: None,
+        name: name.to_string(),
+        namespace: None,
+        arguments: arguments.to_string(),
+        encrypted_function_args: None,
+        call_id: format!("ollama-text-tool-{}", Uuid::new_v4()),
+        internal_chat_message_metadata_passthrough: None,
+    }
 }
 
 /// Persist a completed model response item and record any cited memory usage.
@@ -290,6 +342,9 @@ pub(crate) async fn handle_output_item_done(
     item: ResponseItem,
     previously_active_item: Option<TurnItem>,
 ) -> Result<OutputItemResult> {
+    let item = (ctx.turn_context.config.model_provider_id == OLLAMA_OSS_PROVIDER_ID)
+        .then(|| convert_ollama_text_tool_call(item.clone()))
+        .unwrap_or(item);
     let mut output = OutputItemResult::default();
     let plan_mode = ctx.turn_context.mode == ModeKind::Plan;
 

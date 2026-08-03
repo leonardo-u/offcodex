@@ -85,7 +85,9 @@ where
     T: for<'de> Deserialize<'de>,
 {
     serde_json::from_str(arguments).map_err(|err| {
-        FunctionCallError::RespondToModel(format!("failed to parse function arguments: {err}"))
+        FunctionCallError::RespondToModel(format!(
+            "Invalid tool call JSON. Please correct the syntax and try again. Parser error: {err}"
+        ))
     })
 }
 
