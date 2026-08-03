@@ -13,8 +13,8 @@ RELEASES_ASSET_TIMEOUT=300
 release_source="github"
 
 BIN_DIR="${CODEX_INSTALL_DIR:-$HOME/.local/bin}"
-BIN_PATH="$BIN_DIR/codex"
-CODE_MODE_HOST_BIN_PATH="$BIN_DIR/codex-code-mode-host"
+BIN_PATH="$BIN_DIR/offcodex"
+CODE_MODE_HOST_BIN_PATH="$BIN_DIR/offcodex-code-mode-host"
 CODEX_HOME_DIR="${CODEX_HOME:-$HOME/.codex}"
 STANDALONE_ROOT="$CODEX_HOME_DIR/packages/standalone"
 RELEASES_DIR="$STANDALONE_ROOT/releases"
@@ -793,7 +793,7 @@ current_installed_version() {
 }
 
 resolve_existing_codex() {
-  command -v codex 2>/dev/null || true
+  command -v offcodex 2>/dev/null || true
 }
 
 classify_existing_codex() {
@@ -863,30 +863,30 @@ prompt_yes_no() {
 print_launch_instructions() {
   case "$path_action" in
     added)
-      step "Current terminal: export PATH=\"$BIN_DIR:\$PATH\" && codex"
-      step "Future terminals: open a new terminal and run: codex"
+      step "Current terminal: export PATH=\"$BIN_DIR:\$PATH\" && offcodex"
+      step "Future terminals: open a new terminal and run: offcodex"
       step "PATH was added to $path_profile"
       ;;
     updated)
-      step "Current terminal: export PATH=\"$BIN_DIR:\$PATH\" && codex"
-      step "Future terminals: open a new terminal and run: codex"
+      step "Current terminal: export PATH=\"$BIN_DIR:\$PATH\" && offcodex"
+      step "Future terminals: open a new terminal and run: offcodex"
       step "PATH was updated in $path_profile"
       ;;
     configured)
-      step "Current terminal: export PATH=\"$BIN_DIR:\$PATH\" && codex"
-      step "Future terminals: open a new terminal and run: codex"
+      step "Current terminal: export PATH=\"$BIN_DIR:\$PATH\" && offcodex"
+      step "Future terminals: open a new terminal and run: offcodex"
       step "PATH is already configured in $path_profile"
       ;;
     *)
-      step "Current terminal: codex"
-      step "Future terminals: open a new terminal and run: codex"
+      step "Current terminal: offcodex"
+      step "Future terminals: open a new terminal and run: offcodex"
       ;;
   esac
 }
 
 maybe_launch_codex_now() {
-  if prompt_yes_no "Start Codex now?"; then
-    step "Launching Codex"
+  if prompt_yes_no "Start Offcodex now?"; then
+    step "Launching Offcodex"
     "$BIN_PATH"
   fi
 }
@@ -1045,7 +1045,10 @@ update_visible_command() {
   tmp_link="$BIN_DIR/.codex.$$"
   codex_relative_path="$(release_codex_relative_path "$release_dir")"
 
-  replace_path_with_symlink "$BIN_PATH" "$CURRENT_LINK/$codex_relative_path" "$tmp_link"
+  echo "#!/bin/sh" > "$tmp_link"
+  printf '%s\n' "exec $CURRENT_LINK/$codex_relative_path \$@" >> "$tmp_link"
+  chmod 0755 "$tmp_link"
+  mv -f "$tmp_link" "$BIN_PATH"
 
   if [ "$os" = "darwin" ] && [ -x "$release_dir/bin/codex-code-mode-host" ]; then
     replace_path_with_symlink \

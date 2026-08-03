@@ -20,7 +20,7 @@ use tempfile::TempDir;
 const APPLY_PATCH_ARG0: &str = "apply_patch";
 const MISSPELLED_APPLY_PATCH_ARG0: &str = "applypatch";
 #[cfg(unix)]
-const EXECVE_WRAPPER_ARG0: &str = "codex-execve-wrapper";
+const EXECVE_WRAPPER_ARG0: &str = "offcodex-execve-wrapper";
 const LOCK_FILENAME: &str = ".lock";
 const TOKIO_WORKER_STACK_SIZE_BYTES: usize = 16 * 1024 * 1024;
 
@@ -366,7 +366,7 @@ fn prepare_path_entry_for_codex_aliases(
     }
 
     let temp_dir = tempfile::Builder::new()
-        .prefix("codex-arg0")
+        .prefix("offcodex-arg0")
         .tempdir_in(&temp_root)?;
     let path = temp_dir.path();
 
@@ -592,7 +592,7 @@ mod tests {
     fn linux_sandbox_exe_path_prefers_codex_linux_sandbox_alias() -> std::io::Result<()> {
         let temp_dir = TempDir::new()?;
         let lock_file = create_lock(temp_dir.path())?;
-        let alias_path = temp_dir.path().join("codex-linux-sandbox");
+        let alias_path = temp_dir.path().join("offcodex-linux-sandbox");
         let path_entry = Arg0PathEntryGuard::new(
             temp_dir,
             lock_file,
