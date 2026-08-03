@@ -1251,15 +1251,19 @@ impl App {
                     );
                     let config = self.config.clone();
                     let app_event_tx = self.app_event_tx.clone();
+                    let profile_model = model.clone();
                     tokio::spawn(async move {
                         let result = local_provider_tool_call_profile(
                             OLLAMA_OSS_PROVIDER_ID,
                             &config,
-                            &model,
+                            &profile_model,
                         )
                         .await
                         .map_err(|error| error.to_string());
-                        app_event_tx.send(AppEvent::OllamaToolCallProfileLoaded { model, result });
+                        app_event_tx.send(AppEvent::OllamaToolCallProfileLoaded {
+                            model: profile_model,
+                            result,
+                        });
                     });
                 }
                 self.sync_active_thread_model_setting(app_server, model)
